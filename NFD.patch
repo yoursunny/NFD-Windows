@@ -1,0 +1,1807 @@
+diff --git a/core/city-hash.cpp b/core/city-hash.cpp
+index b8a7791..90342a2 100644
+--- a/core/city-hash.cpp
++++ b/core/city-hash.cpp
+@@ -82,7 +82,10 @@ static uint32 UNALIGNED_LOAD32(const char *p) {
+ 
+ #else
+ 
+-#include <byteswap.h>
++#include <boost/endian/conversion.hpp>
++#define bswap_16(x) ::boost::endian::endian_reverse(x)
++#define bswap_32(x) ::boost::endian::endian_reverse(x)
++#define bswap_64(x) ::boost::endian::endian_reverse(x)
+ 
+ #endif
+ 
+diff --git a/core/logger-factory.cpp b/core/logger-factory.cpp
+index a463b94..3d72129 100644
+--- a/core/logger-factory.cpp
++++ b/core/logger-factory.cpp
+@@ -144,7 +144,7 @@ LoggerFactory::onConfig(const ConfigSection& section,
+       // do nothing
+     }
+     else {
+-      std::unique_lock<std::mutex> lock(m_loggersGuard);
++      boost::unique_lock<boost::mutex> lock(m_loggersGuard);
+       LoggerMap::iterator loggerIt = m_loggers.find(i.first);
+       if (loggerIt == m_loggers.end()) {
+         lock.unlock();
+@@ -164,7 +164,7 @@ void
+ LoggerFactory::setDefaultLevel(LogLevel level)
+ {
+   // std::cerr << "changing to default_level " << level << std::endl;
+-  std::lock_guard<std::mutex> lock(m_loggersGuard);
++  boost::lock_guard<boost::mutex> lock(m_loggersGuard);
+ 
+   m_defaultLevel = level;
+   for (auto&& logger : m_loggers) {
+@@ -185,7 +185,7 @@ LoggerFactory::createLogger(const std::string& moduleName)
+   // std::cerr << "creating logger for " << moduleName
+   //           << " with level " << m_defaultLevel << std::endl;
+ 
+-  std::lock_guard<std::mutex> lock(m_loggersGuard);
++  boost::lock_guard<boost::mutex> lock(m_loggersGuard);
+ 
+   std::pair<LoggerMap::iterator, bool> loggerIt =
+     m_loggers.insert(NameAndLogger(moduleName, Logger(moduleName, m_defaultLevel)));
+@@ -196,7 +196,7 @@ LoggerFactory::createLogger(const std::string& moduleName)
+ std::list<std::string>
+ LoggerFactory::getModules() const
+ {
+-  std::lock_guard<std::mutex> lock(m_loggersGuard);
++  boost::lock_guard<boost::mutex> lock(m_loggersGuard);
+ 
+   std::list<std::string> modules;
+   for (const auto& loggerName : m_loggers | boost::adaptors::map_keys) {
+diff --git a/core/logger-factory.hpp b/core/logger-factory.hpp
+index 606ac1c..267fb62 100644
+--- a/core/logger-factory.hpp
++++ b/core/logger-factory.hpp
+@@ -101,7 +101,7 @@ private:
+   typedef std::pair<std::string, Logger> NameAndLogger;
+ 
+   LoggerMap m_loggers;
+-  mutable std::mutex m_loggersGuard;
++  mutable boost::mutex m_loggersGuard;
+ 
+   LogLevel m_defaultLevel;
+ };
+diff --git a/core/logger.cpp b/core/logger.cpp
+index 3a9da61..780cee6 100644
+--- a/core/logger.cpp
++++ b/core/logger.cpp
+@@ -36,7 +36,7 @@
+ 
+ namespace nfd {
+ 
+-std::mutex g_logMutex;
++boost::mutex g_logMutex;
+ 
+ Logger::Logger(const std::string& name, LogLevel level)
+   : m_moduleName(name)
+diff --git a/core/logger.hpp b/core/logger.hpp
+index 54af7cb..e26f528 100644
+--- a/core/logger.hpp
++++ b/core/logger.hpp
+@@ -32,7 +32,7 @@
+ #include "custom-logger.hpp"
+ #else
+ 
+-#include <mutex>
++#include <boost/thread.hpp>
+ 
+ namespace nfd {
+ 
+@@ -130,12 +130,12 @@ nfd::Logger& cls<specialization>::g_logger = nfd::LoggerFactory::create(name)
+ template<>                                                                 \
+ nfd::Logger& cls<s1, s2>::g_logger = nfd::LoggerFactory::create(name)
+ 
+-extern std::mutex g_logMutex;
++extern boost::mutex g_logMutex;
+ 
+ #define NFD_LOG(level, msg, expression)                          \
+ do {                                                             \
+   if (g_logger.isEnabled(::nfd::LOG_##level)) {                  \
+-    std::lock_guard<std::mutex> lock(::nfd::g_logMutex);         \
++    boost::lock_guard<boost::mutex> lock(::nfd::g_logMutex);     \
+     std::clog << ::nfd::Logger::now() << " "#msg": "             \
+               << "[" << g_logger << "] " << expression << "\n";  \
+   }                                                              \
+diff --git a/core/network-interface.hpp b/core/network-interface.hpp
+index 0034052..6c0a5dc 100644
+--- a/core/network-interface.hpp
++++ b/core/network-interface.hpp
+@@ -30,8 +30,6 @@
+ 
+ #include <ndn-cxx/util/ethernet.hpp>
+ 
+-#include <net/if.h>
+-
+ namespace nfd {
+ 
+ namespace ethernet = ndn::util::ethernet;
+@@ -67,25 +65,25 @@ public:
+ inline bool
+ NetworkInterfaceInfo::isLoopback() const
+ {
+-  return (flags & IFF_LOOPBACK) != 0;
++  return false;
+ }
+ 
+ inline bool
+ NetworkInterfaceInfo::isMulticastCapable() const
+ {
+-  return (flags & IFF_MULTICAST) != 0;
++  return false;
+ }
+ 
+ inline bool
+ NetworkInterfaceInfo::isBroadcastCapable() const
+ {
+-  return (flags & IFF_BROADCAST) != 0;
++  return false;
+ }
+ 
+ inline bool
+ NetworkInterfaceInfo::isUp() const
+ {
+-  return (flags & IFF_UP) != 0;
++  return false;
+ }
+ 
+ /** \brief List configured network interfaces on the system and their info
+diff --git a/core/privilege-helper.cpp b/core/privilege-helper.cpp
+index ba3da78..db466c0 100644
+--- a/core/privilege-helper.cpp
++++ b/core/privilege-helper.cpp
+@@ -26,8 +26,10 @@
+ #include "privilege-helper.hpp"
+ #include "core/logger.hpp"
+ 
++#ifdef HAVE_PRIVILEGE_DROP_AND_ELEVATE
+ #include <pwd.h>
+ #include <grp.h>
++#endif // HAVE_PRIVILEGE_DROP_AND_ELEVATE
+ 
+ namespace nfd {
+ 
+diff --git a/daemon/face/udp-factory.cpp b/daemon/face/udp-factory.cpp
+index cc60a63..63d43a5 100644
+--- a/daemon/face/udp-factory.cpp
++++ b/daemon/face/udp-factory.cpp
+@@ -110,7 +110,7 @@ UdpFactory::createChannel(const udp::Endpoint& endpoint,
+                                 "endpoint is already allocated for a UDP multicast face"));
+   }
+ 
+-  channel = make_shared<UdpChannel>(endpoint, timeout);
++  channel = std::make_shared<UdpChannel>(endpoint, timeout);
+   m_channels[endpoint] = channel;
+   prohibitEndpoint(endpoint);
+ 
+diff --git a/daemon/main.cpp b/daemon/main.cpp
+index a73dd09..4c2b1b0 100644
+--- a/daemon/main.cpp
++++ b/daemon/main.cpp
+@@ -44,7 +44,6 @@
+ #include <boost/thread.hpp>
+ 
+ #include <atomic>
+-#include <condition_variable>
+ 
+ namespace nfd {
+ 
+@@ -66,15 +65,7 @@ public:
+   NfdRunner(const std::string& configFile)
+     : m_nfd(configFile, m_nfdKeyChain)
+     , m_configFile(configFile)
+-    , m_terminationSignalSet(getGlobalIoService())
+-    , m_reloadSignalSet(getGlobalIoService())
+   {
+-    m_terminationSignalSet.add(SIGINT);
+-    m_terminationSignalSet.add(SIGTERM);
+-    m_terminationSignalSet.async_wait(bind(&NfdRunner::terminate, this, _1, _2));
+-
+-    m_reloadSignalSet.add(SIGHUP);
+-    m_reloadSignalSet.async_wait(bind(&NfdRunner::reload, this, _1, _2));
+   }
+ 
+   static void
+@@ -126,13 +117,13 @@ public:
+     // threads:
+     // - to block main thread until RIB manager thread starts and initializes nrdIo (to allow
+     //   stopping it later)
+-    std::mutex m;
+-    std::condition_variable cv;
++    boost::mutex m;
++    boost::condition_variable cv;
+ 
+     std::string configFile = this->m_configFile; // c++11 lambda cannot capture member variables
+     boost::thread nrdThread([configFile, &retval, &nrdIo, mainIo, &cv, &m] {
+         {
+-          std::lock_guard<std::mutex> lock(m);
++          boost::lock_guard<boost::mutex> lock(m);
+           nrdIo = &getGlobalIoService();
+           BOOST_ASSERT(nrdIo != mainIo);
+         }
+@@ -152,7 +143,7 @@ public:
+         }
+ 
+         {
+-          std::lock_guard<std::mutex> lock(m);
++          boost::lock_guard<boost::mutex> lock(m);
+           nrdIo = nullptr;
+         }
+       });
+@@ -160,7 +151,7 @@ public:
+     {
+       // Wait to guarantee that nrdIo is properly initialized, so it can be used to terminate
+       // RIB manager thread.
+-      std::unique_lock<std::mutex> lock(m);
++      boost::unique_lock<boost::mutex> lock(m);
+       cv.wait(lock, [&nrdIo] { return nrdIo != nullptr; });
+     }
+ 
+@@ -178,7 +169,7 @@ public:
+ 
+     {
+       // nrdIo is guaranteed to be alive at this point
+-      std::lock_guard<std::mutex> lock(m);
++      boost::lock_guard<boost::mutex> lock(m);
+       if (nrdIo != nullptr) {
+         nrdIo->stop();
+         nrdIo = nullptr;
+@@ -189,35 +180,10 @@ public:
+     return retval;
+   }
+ 
+-  void
+-  terminate(const boost::system::error_code& error, int signalNo)
+-  {
+-    if (error)
+-      return;
+-
+-    NFD_LOG_INFO("Caught signal '" << ::strsignal(signalNo) << "', exiting...");
+-    getGlobalIoService().stop();
+-  }
+-
+-  void
+-  reload(const boost::system::error_code& error, int signalNo)
+-  {
+-    if (error)
+-      return;
+-
+-    NFD_LOG_INFO("Caught signal '" << ::strsignal(signalNo) << "', reloading...");
+-    m_nfd.reloadConfigFile();
+-
+-    m_reloadSignalSet.async_wait(bind(&NfdRunner::reload, this, _1, _2));
+-  }
+-
+ private:
+   ndn::KeyChain           m_nfdKeyChain;
+   Nfd                     m_nfd;
+   std::string             m_configFile;
+-
+-  boost::asio::signal_set m_terminationSignalSet;
+-  boost::asio::signal_set m_reloadSignalSet;
+ };
+ 
+ } // namespace nfd
+diff --git a/daemon/mgmt/command-validator.cpp b/daemon/mgmt/command-validator.cpp
+index 715b5d5..bf90caa 100644
+--- a/daemon/mgmt/command-validator.cpp
++++ b/daemon/mgmt/command-validator.cpp
+@@ -103,13 +103,13 @@ CommandValidator::onConfig(const ConfigSection& section,
+       if (certfile != "any")
+         {
+           path certfilePath = absolute(certfile, path(filename).parent_path());
+-          NFD_LOG_DEBUG("generated certfile path: " << certfilePath.native());
++          NFD_LOG_DEBUG("generated certfile path: " << certfilePath.generic_string());
+ 
+           std::ifstream in;
+-          in.open(certfilePath.c_str());
++          in.open(certfilePath.generic_string().c_str());
+           if (!in.is_open())
+             {
+-              std::string msg = "Unable to open certificate file " + certfilePath.native();
++              std::string msg = "Unable to open certificate file " + certfilePath.generic_string();
+               if (!isDryRun)
+                 {
+                   BOOST_THROW_EXCEPTION(ConfigFile::Error(msg));
+@@ -128,7 +128,7 @@ CommandValidator::onConfig(const ConfigSection& section,
+             }
+ 
+           if (!static_cast<bool>(id)) {
+-            std::string msg = "Malformed certificate file " + certfilePath.native();
++            std::string msg = "Malformed certificate file " + certfilePath.generic_string();
+             if (!isDryRun)
+               {
+                 BOOST_THROW_EXCEPTION(ConfigFile::Error(msg));
+diff --git a/daemon/table/strategy-info-host.hpp b/daemon/table/strategy-info-host.hpp
+index 84c0c63..458315e 100644
+--- a/daemon/table/strategy-info-host.hpp
++++ b/daemon/table/strategy-info-host.hpp
+@@ -108,7 +108,7 @@ StrategyInfoHost::getOrCreateStrategyInfo(A&&... args)
+ 
+   shared_ptr<T> item = this->getStrategyInfo<T>();
+   if (!static_cast<bool>(item)) {
+-    item = make_shared<T>(std::forward<A>(args)...);
++    item = std::make_shared<T>(std::forward<A>(args)...);
+     this->setStrategyInfo(item);
+   }
+   return item;
+diff --git a/rib/nrd.cpp b/rib/nrd.cpp
+index bcee83c..391fb12 100644
+--- a/rib/nrd.cpp
++++ b/rib/nrd.cpp
+@@ -32,7 +32,6 @@
+ 
+ #include <boost/property_tree/info_parser.hpp>
+ 
+-#include <ndn-cxx/transport/unix-transport.hpp>
+ #include <ndn-cxx/transport/tcp-transport.hpp>
+ 
+ namespace nfd {
+@@ -125,16 +124,8 @@ Nrd::getLocalNfdTransport()
+   else
+     config = m_configSection;
+ 
+-  if (config.get_child_optional("face_system.unix")) {
+-    // unix socket enabled
+-
+-    auto&& socketPath = config.get<std::string>("face_system.unix.path", "/var/run/nfd.sock");
+-    // default socketPath should be the same as in FaceManager::processSectionUnix
+-
+-    return make_shared<ndn::UnixTransport>(socketPath);
+-  }
+-  else if (config.get_child_optional("face_system.tcp") &&
+-           config.get<std::string>("face_system.tcp.listen", "yes") == "yes") {
++  if (config.get_child_optional("face_system.tcp") &&
++      config.get<std::string>("face_system.tcp.listen", "yes") == "yes") {
+     // tcp is enabled
+ 
+     auto&& port = config.get<std::string>("face_system.tcp.port", "6363");
+diff --git a/tools/ndn-autoconfig/base-dns.cpp b/tools/ndn-autoconfig/base-dns.cpp
+deleted file mode 100644
+index c4f27b3..0000000
+--- a/tools/ndn-autoconfig/base-dns.cpp
++++ /dev/null
+@@ -1,170 +0,0 @@
+-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+-/**
+- * Copyright (c) 2014-2015,  Regents of the University of California,
+- *                           Arizona Board of Regents,
+- *                           Colorado State University,
+- *                           University Pierre & Marie Curie, Sorbonne University,
+- *                           Washington University in St. Louis,
+- *                           Beijing Institute of Technology,
+- *                           The University of Memphis.
+- *
+- * This file is part of NFD (Named Data Networking Forwarding Daemon).
+- * See AUTHORS.md for complete list of NFD authors and contributors.
+- *
+- * NFD is free software: you can redistribute it and/or modify it under the terms
+- * of the GNU General Public License as published by the Free Software Foundation,
+- * either version 3 of the License, or (at your option) any later version.
+- *
+- * NFD is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+- * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+- * PURPOSE.  See the GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along with
+- * NFD, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
+- */
+-
+-#include "base-dns.hpp"
+-
+-#include <sys/types.h>
+-#include <netinet/in.h>
+-#include <resolv.h>
+-#include <arpa/nameser.h>
+-
+-#ifdef __APPLE__
+-#include <arpa/nameser_compat.h>
+-#endif
+-
+-namespace ndn {
+-namespace tools {
+-namespace autoconfig {
+-
+-union BaseDns::QueryAnswer
+-{
+-  HEADER header;
+-  uint8_t buf[NS_PACKETSZ];
+-};
+-
+-BaseDns::BaseDns(Face& face, KeyChain& keyChain, const NextStageCallback& nextStageOnFailure)
+-  : Base(face, keyChain, nextStageOnFailure)
+-{
+-}
+-
+-std::string
+-BaseDns::querySrvRr(const std::string& fqdn)
+-{
+-  std::string srvDomain = "_ndn._udp." + fqdn;
+-  std::cerr << "Sending DNS query for SRV record for " << srvDomain << std::endl;
+-
+-  res_init();
+-
+-  _res.retrans = 1;
+-  _res.retry = 2;
+-  _res.ndots = 10;
+-
+-  QueryAnswer queryAnswer;
+-  int answerSize = res_query(srvDomain.c_str(),
+-                             ns_c_in,
+-                             ns_t_srv,
+-                             queryAnswer.buf,
+-                             sizeof(queryAnswer));
+-  if (answerSize == 0) {
+-    BOOST_THROW_EXCEPTION(Error("No DNS SRV records found for " + srvDomain));
+-  }
+-  return parseSrvRr(queryAnswer, answerSize);
+-}
+-
+-/**
+- * @brief Send DNS SRV request using search domain list
+- */
+-std::string
+-BaseDns::querySrvRrSearch()
+-{
+-  std::cerr << "Sending DNS query for SRV record for _ndn._udp" << std::endl;
+-
+-  QueryAnswer queryAnswer;
+-
+-  res_init();
+-
+-  _res.retrans = 1;
+-  _res.retry = 2;
+-  _res.ndots = 10;
+-
+-  int answerSize = res_search("_ndn._udp",
+-                              ns_c_in,
+-                              ns_t_srv,
+-                              queryAnswer.buf,
+-                              sizeof(queryAnswer));
+-
+-  if (answerSize == 0) {
+-    BOOST_THROW_EXCEPTION(Error("No DNS SRV records found for _ndn._udp"));
+-  }
+-
+-  return parseSrvRr(queryAnswer, answerSize);
+-}
+-
+-std::string
+-BaseDns::parseSrvRr(const QueryAnswer& queryAnswer, int answerSize)
+-{
+-  // The references of the next classes are:
+-  // http://www.diablotin.com/librairie/networking/dnsbind/ch14_02.htm
+-
+-  struct rechdr
+-  {
+-    uint16_t type;
+-    uint16_t iclass;
+-    uint32_t ttl;
+-    uint16_t length;
+-  };
+-
+-  struct srv_t
+-  {
+-    uint16_t priority;
+-    uint16_t weight;
+-    uint16_t port;
+-    uint8_t* target;
+-  };
+-
+-  if (ntohs(queryAnswer.header.ancount) == 0) {
+-    BOOST_THROW_EXCEPTION(Error("SRV record cannot be parsed"));
+-  }
+-
+-  const uint8_t* blob = queryAnswer.buf + NS_HFIXEDSZ;
+-
+-  blob += dn_skipname(blob, queryAnswer.buf + answerSize) + NS_QFIXEDSZ;
+-
+-  char srvName[NS_MAXDNAME];
+-  int serverNameSize = dn_expand(queryAnswer.buf,               // message pointer
+-                                 queryAnswer.buf + answerSize,  // end of message
+-                                 blob,                          // compressed server name
+-                                 srvName,                       // expanded server name
+-                                 NS_MAXDNAME);
+-  if (serverNameSize <= 0) {
+-    BOOST_THROW_EXCEPTION(Error("SRV record cannot be parsed (error decoding domain name)"));
+-  }
+-
+-  const srv_t* server = reinterpret_cast<const srv_t*>(&blob[sizeof(rechdr)]);
+-  uint16_t convertedPort = be16toh(server->port);
+-
+-  blob += serverNameSize + NS_HFIXEDSZ + NS_QFIXEDSZ;
+-
+-  char hostName[NS_MAXDNAME];
+-  int hostNameSize = dn_expand(queryAnswer.buf,               // message pointer
+-                               queryAnswer.buf + answerSize,  // end of message
+-                               blob,                          // compressed host name
+-                               hostName,                      // expanded host name
+-                               NS_MAXDNAME);
+-  if (hostNameSize <= 0) {
+-    BOOST_THROW_EXCEPTION(Error("SRV record cannot be parsed (error decoding host name)"));
+-  }
+-
+-  std::string uri = "udp://";
+-  uri.append(hostName);
+-  uri.append(":");
+-  uri.append(to_string(convertedPort));
+-
+-  return uri;
+-}
+-
+-} // namespace autoconfig
+-} // namespace tools
+-} // namespace ndn
+diff --git a/tools/ndn-autoconfig/base-dns.hpp b/tools/ndn-autoconfig/base-dns.hpp
+deleted file mode 100644
+index 1b881ba..0000000
+--- a/tools/ndn-autoconfig/base-dns.hpp
++++ /dev/null
+@@ -1,85 +0,0 @@
+-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+-/**
+- * Copyright (c) 2014-2015,  Regents of the University of California,
+- *                           Arizona Board of Regents,
+- *                           Colorado State University,
+- *                           University Pierre & Marie Curie, Sorbonne University,
+- *                           Washington University in St. Louis,
+- *                           Beijing Institute of Technology,
+- *                           The University of Memphis.
+- *
+- * This file is part of NFD (Named Data Networking Forwarding Daemon).
+- * See AUTHORS.md for complete list of NFD authors and contributors.
+- *
+- * NFD is free software: you can redistribute it and/or modify it under the terms
+- * of the GNU General Public License as published by the Free Software Foundation,
+- * either version 3 of the License, or (at your option) any later version.
+- *
+- * NFD is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+- * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+- * PURPOSE.  See the GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along with
+- * NFD, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
+- */
+-
+-#ifndef NFD_TOOLS_NDN_AUTOCONFIG_BASE_DNS_HPP
+-#define NFD_TOOLS_NDN_AUTOCONFIG_BASE_DNS_HPP
+-
+-#include "base.hpp"
+-
+-namespace ndn {
+-namespace tools {
+-namespace autoconfig {
+-
+-/**
+- * @brief Base class for stages that use DNS-based guessing
+- */
+-class BaseDns : public Base
+-{
+-protected:
+-  class Error : public std::runtime_error
+-  {
+-  public:
+-    explicit
+-    Error(const std::string& what)
+-      : std::runtime_error(what)
+-    {
+-    }
+-  };
+-
+-  BaseDns(Face& face, KeyChain& keyChain, const NextStageCallback& nextStageOnFailure);
+-
+-  /**
+-   * @brief Send DNS SRV request for a @p fqdn fully qualified domain name
+-   * @return FaceUri of the hub from the requested SRV record
+-   * @throw Error if query returns nothing or SRV record cannot be parsed
+-   */
+-  std::string
+-  querySrvRr(const std::string& fqdn);
+-
+-  /**
+-   * @brief Send DNS SRV request using search domain list
+-   * @return FaceUri of the hub from the requested SRV record
+-   * @throw Error if query returns nothing or SRV record cannot be parsed
+-   */
+-  std::string
+-  querySrvRrSearch();
+-
+-private:
+-  union QueryAnswer;
+-
+-  /**
+-   * @brief Parse SRV record
+-   * @return FaceUri of the hub from the SRV record
+-   * @throw Error if SRV record cannot be parsed
+-   */
+-  std::string
+-  parseSrvRr(const QueryAnswer& queryAnswer, int answerSize);
+-};
+-
+-} // namespace autoconfig
+-} // namespace tools
+-} // namespace ndn
+-
+-#endif // NFD_TOOLS_NDN_AUTOCONFIG_BASE_DNS_HPP
+diff --git a/tools/ndn-autoconfig/base.cpp b/tools/ndn-autoconfig/base.cpp
+deleted file mode 100644
+index c896e67..0000000
+--- a/tools/ndn-autoconfig/base.cpp
++++ /dev/null
+@@ -1,122 +0,0 @@
+-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+-/**
+- * Copyright (c) 2014-2015,  Regents of the University of California,
+- *                           Arizona Board of Regents,
+- *                           Colorado State University,
+- *                           University Pierre & Marie Curie, Sorbonne University,
+- *                           Washington University in St. Louis,
+- *                           Beijing Institute of Technology,
+- *                           The University of Memphis.
+- *
+- * This file is part of NFD (Named Data Networking Forwarding Daemon).
+- * See AUTHORS.md for complete list of NFD authors and contributors.
+- *
+- * NFD is free software: you can redistribute it and/or modify it under the terms
+- * of the GNU General Public License as published by the Free Software Foundation,
+- * either version 3 of the License, or (at your option) any later version.
+- *
+- * NFD is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+- * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+- * PURPOSE.  See the GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along with
+- * NFD, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
+- */
+-
+-#include "base.hpp"
+-
+-namespace ndn {
+-namespace tools {
+-namespace autoconfig {
+-
+-Base::Base(Face& face, KeyChain& keyChain, const NextStageCallback& nextStageOnFailure)
+-  : m_face(face)
+-  , m_keyChain(keyChain)
+-  , m_controller(face, keyChain)
+-  , m_nextStageOnFailure(nextStageOnFailure)
+-{
+-}
+-
+-void
+-Base::connectToHub(const std::string& uri)
+-{
+-  util::FaceUri faceUri(uri);
+-
+-  faceUri.canonize(bind(&Base::onCanonizeSuccess, this, _1),
+-                   bind(&Base::onCanonizeFailure, this, _1),
+-                   m_face.getIoService(), time::seconds(4));
+-
+-}
+-
+-
+-void
+-Base::onCanonizeSuccess(const util::FaceUri& canonicalUri)
+-{
+-  std::cerr << "About to connect to: " << canonicalUri.toString() << std::endl;
+-
+-  m_controller.start<nfd::FaceCreateCommand>(nfd::ControlParameters()
+-                                               .setUri(canonicalUri.toString()),
+-                                             bind(&Base::onHubConnectSuccess, this, _1),
+-                                             bind(&Base::onHubConnectError, this, _1, _2));
+-}
+-
+-void
+-Base::onCanonizeFailure(const std::string& reason)
+-{
+-  std::ostringstream os;
+-  os << "FaceUri canonization failed: " << reason;
+-  BOOST_THROW_EXCEPTION(Error(os.str()));
+-}
+-
+-void
+-Base::onHubConnectSuccess(const nfd::ControlParameters& resp)
+-{
+-  std::cerr << "Successfully created face: " << resp << std::endl;
+-
+-  static const Name TESTBED_PREFIX = "/ndn";
+-  registerPrefix(TESTBED_PREFIX, resp.getFaceId());
+-
+-  static const Name LOCALHOP_NFD_PREFIX = "/localhop/nfd";
+-  registerPrefix(LOCALHOP_NFD_PREFIX, resp.getFaceId());
+-}
+-
+-void
+-Base::onHubConnectError(uint32_t code, const std::string& error)
+-{
+-  std::ostringstream os;
+-  os << "Failed to create face: " << error << " (code: " << code << ")";
+-  BOOST_THROW_EXCEPTION(Error(os.str()));
+-}
+-
+-void
+-Base::registerPrefix(const Name& prefix, uint64_t faceId)
+-{
+-  // Register a prefix in RIB
+-  m_controller.start<nfd::RibRegisterCommand>(nfd::ControlParameters()
+-                                                .setName(prefix)
+-                                                .setFaceId(faceId)
+-                                                .setOrigin(nfd::ROUTE_ORIGIN_AUTOCONF)
+-                                                .setCost(100)
+-                                                .setExpirationPeriod(time::milliseconds::max()),
+-                                              bind(&Base::onPrefixRegistrationSuccess, this, _1),
+-                                              bind(&Base::onPrefixRegistrationError, this, _1, _2));
+-}
+-
+-void
+-Base::onPrefixRegistrationSuccess(const nfd::ControlParameters& commandSuccessResult)
+-{
+-  std::cerr << "Successful in name registration: " << commandSuccessResult << std::endl;
+-}
+-
+-void
+-Base::onPrefixRegistrationError(uint32_t code, const std::string& error)
+-{
+-  std::ostringstream os;
+-  os << "Failed in name registration, " << error << " (code: " << code << ")";
+-  BOOST_THROW_EXCEPTION(Error(os.str()));
+-}
+-
+-
+-} // namespace autoconfig
+-} // namespace tools
+-} // namespace ndn
+diff --git a/tools/ndn-autoconfig/base.hpp b/tools/ndn-autoconfig/base.hpp
+deleted file mode 100644
+index bf195c6..0000000
+--- a/tools/ndn-autoconfig/base.hpp
++++ /dev/null
+@@ -1,120 +0,0 @@
+-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+-/**
+- * Copyright (c) 2014-2015,  Regents of the University of California,
+- *                           Arizona Board of Regents,
+- *                           Colorado State University,
+- *                           University Pierre & Marie Curie, Sorbonne University,
+- *                           Washington University in St. Louis,
+- *                           Beijing Institute of Technology,
+- *                           The University of Memphis.
+- *
+- * This file is part of NFD (Named Data Networking Forwarding Daemon).
+- * See AUTHORS.md for complete list of NFD authors and contributors.
+- *
+- * NFD is free software: you can redistribute it and/or modify it under the terms
+- * of the GNU General Public License as published by the Free Software Foundation,
+- * either version 3 of the License, or (at your option) any later version.
+- *
+- * NFD is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+- * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+- * PURPOSE.  See the GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along with
+- * NFD, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
+- */
+-
+-#ifndef NFD_TOOLS_NDN_AUTOCONFIG_BASE_HPP
+-#define NFD_TOOLS_NDN_AUTOCONFIG_BASE_HPP
+-
+-#include "common.hpp"
+-
+-#include <boost/noncopyable.hpp>
+-
+-#include <ndn-cxx/face.hpp>
+-#include <ndn-cxx/security/key-chain.hpp>
+-#include <ndn-cxx/management/nfd-controller.hpp>
+-#include <ndn-cxx/management/nfd-face-status.hpp>
+-#include <ndn-cxx/encoding/buffer-stream.hpp>
+-#include <ndn-cxx/util/face-uri.hpp>
+-
+-namespace ndn {
+-namespace tools {
+-namespace autoconfig {
+-
+-/**
+- * @brief Base class for discovery stages
+- */
+-class Base : boost::noncopyable
+-{
+-public:
+-  class Error : public std::runtime_error
+-  {
+-  public:
+-    explicit
+-    Error(const std::string& what)
+-      : std::runtime_error(what)
+-    {
+-    }
+-  };
+-
+-  /**
+-   * @brief Callback to be called when the stage fails
+-   */
+-  typedef std::function<void(const std::string&)> NextStageCallback;
+-
+-  /**
+-   * @brief Start the stage
+-   */
+-  virtual void
+-  start() = 0;
+-
+-protected:
+-  /**
+-   * @brief Initialize variables and create nfd::Controller instance
+-   * @param face Face to be used for all operations (e.g., will send registration commands)
+-   * @param keyChain KeyChain object
+-   * @param nextStageOnFailure Callback to be called after the stage failed
+-   */
+-  Base(Face& face, KeyChain& keyChain, const NextStageCallback& nextStageOnFailure);
+-
+-  /**
+-   * @brief Attempt to connect to local hub using the \p uri FaceUri
+-   * @throw Base::Error when failed to establish the tunnel
+-   */
+-  void
+-  connectToHub(const std::string& uri);
+-
+-private:
+-  void
+-  onCanonizeSuccess(const util::FaceUri& canonicalUri);
+-
+-  void
+-  onCanonizeFailure(const std::string& reason);
+-
+-  void
+-  onHubConnectSuccess(const nfd::ControlParameters& resp);
+-
+-  void
+-  onHubConnectError(uint32_t code, const std::string& error);
+-
+-  void
+-  registerPrefix(const Name& prefix, uint64_t faceId);
+-
+-  void
+-  onPrefixRegistrationSuccess(const nfd::ControlParameters& commandSuccessResult);
+-
+-  void
+-  onPrefixRegistrationError(uint32_t code, const std::string& error);
+-
+-protected:
+-  Face& m_face;
+-  KeyChain& m_keyChain;
+-  nfd::Controller m_controller;
+-  NextStageCallback m_nextStageOnFailure;
+-};
+-
+-} // namespace autoconfig
+-} // namespace tools
+-} // namespace ndn
+-
+-#endif // NFD_TOOLS_NDN_AUTOCONFIG_BASE_HPP
+diff --git a/tools/ndn-autoconfig/guess-from-identity-name.cpp b/tools/ndn-autoconfig/guess-from-identity-name.cpp
+deleted file mode 100644
+index 5a6df3e..0000000
+--- a/tools/ndn-autoconfig/guess-from-identity-name.cpp
++++ /dev/null
+@@ -1,63 +0,0 @@
+-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+-/**
+- * Copyright (c) 2014-2015,  Regents of the University of California,
+- *                           Arizona Board of Regents,
+- *                           Colorado State University,
+- *                           University Pierre & Marie Curie, Sorbonne University,
+- *                           Washington University in St. Louis,
+- *                           Beijing Institute of Technology,
+- *                           The University of Memphis.
+- *
+- * This file is part of NFD (Named Data Networking Forwarding Daemon).
+- * See AUTHORS.md for complete list of NFD authors and contributors.
+- *
+- * NFD is free software: you can redistribute it and/or modify it under the terms
+- * of the GNU General Public License as published by the Free Software Foundation,
+- * either version 3 of the License, or (at your option) any later version.
+- *
+- * NFD is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+- * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+- * PURPOSE.  See the GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along with
+- * NFD, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
+- */
+-
+-#include "guess-from-identity-name.hpp"
+-
+-namespace ndn {
+-namespace tools {
+-namespace autoconfig {
+-
+-GuessFromIdentityName::GuessFromIdentityName(Face& face, KeyChain& keyChain,
+-                                             const NextStageCallback& nextStageOnFailure)
+-  : BaseDns(face, keyChain, nextStageOnFailure)
+-{
+-}
+-
+-void
+-GuessFromIdentityName::start()
+-{
+-  std::cerr << "Trying to find home router based on the default identity name..." << std::endl;
+-
+-  Name identity = m_keyChain.getDefaultIdentity();
+-
+-  std::ostringstream serverName;
+-  for (auto i = identity.rbegin(); i != identity.rend(); ++i) {
+-    serverName << i->toUri() << ".";
+-  }
+-  serverName << "_homehub._autoconf.named-data.net";
+-
+-  try {
+-    std::string hubUri = BaseDns::querySrvRr(serverName.str());
+-    this->connectToHub(hubUri);
+-  }
+-  catch (const BaseDns::Error& e) {
+-    m_nextStageOnFailure(std::string("Failed to find a home router based on the default identity "
+-                                     "name (") + e.what() + ")");
+-  }
+-}
+-
+-} // namespace autoconfig
+-} // namespace tools
+-} // namespace ndn
+diff --git a/tools/ndn-autoconfig/guess-from-identity-name.hpp b/tools/ndn-autoconfig/guess-from-identity-name.hpp
+deleted file mode 100644
+index 3e0008f..0000000
+--- a/tools/ndn-autoconfig/guess-from-identity-name.hpp
++++ /dev/null
+@@ -1,74 +0,0 @@
+-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+-/**
+- * Copyright (c) 2014-2015,  Regents of the University of California,
+- *                           Arizona Board of Regents,
+- *                           Colorado State University,
+- *                           University Pierre & Marie Curie, Sorbonne University,
+- *                           Washington University in St. Louis,
+- *                           Beijing Institute of Technology,
+- *                           The University of Memphis.
+- *
+- * This file is part of NFD (Named Data Networking Forwarding Daemon).
+- * See AUTHORS.md for complete list of NFD authors and contributors.
+- *
+- * NFD is free software: you can redistribute it and/or modify it under the terms
+- * of the GNU General Public License as published by the Free Software Foundation,
+- * either version 3 of the License, or (at your option) any later version.
+- *
+- * NFD is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+- * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+- * PURPOSE.  See the GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along with
+- * NFD, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
+- */
+-
+-#ifndef NFD_TOOLS_NDN_AUTOCONFIG_GUESS_FROM_IDENTITY_NAME_HPP
+-#define NFD_TOOLS_NDN_AUTOCONFIG_GUESS_FROM_IDENTITY_NAME_HPP
+-
+-#include "base-dns.hpp"
+-
+-namespace ndn {
+-namespace tools {
+-namespace autoconfig {
+-
+-/**
+- * @brief Guessing home router based on the default identity name
+- *
+- * This stage assumes that user has configured default certificate using
+- * http://ndncert.named-data.net/
+- *
+- * - Request
+- *
+- *     The end host loads the default user identity (eg. /ndn/edu/ucla/cs/afanasev), and
+- *     converts it to DNS format.
+- *
+- *     The end host sends a DNS query for an SRV record of name _ndn._udp. + user identity in
+- *     DNS format + _homehub._auto-conf.named-data.net. For example:
+- *
+- *         _ndn._udp.afanasev.cs.ucla.edu.ndn._homehub._autoconf.named-data.net
+- *
+- * - Response
+- *
+- *     The DNS server should answer with an SRV record that contains the hostname and UDP port
+- *     number of the home NDN router of this user's site.
+- */
+-class GuessFromIdentityName : public BaseDns
+-{
+-public:
+-  /**
+-   * @brief Create stage to guess home router based on the default identity name
+-   * @sa Base::Base
+-   */
+-  GuessFromIdentityName(Face& face, KeyChain& keyChain,
+-                        const NextStageCallback& nextStageOnFailure);
+-
+-  virtual void
+-  start() DECL_OVERRIDE;
+-};
+-
+-} // namespace autoconfig
+-} // namespace tools
+-} // namespace ndn
+-
+-#endif // NFD_TOOLS_NDN_AUTOCONFIG_GUESSING_FROM_IDENTITY_NAME_HPP
+diff --git a/tools/ndn-autoconfig/guess-from-search-domains.cpp b/tools/ndn-autoconfig/guess-from-search-domains.cpp
+deleted file mode 100644
+index 2f452e7..0000000
+--- a/tools/ndn-autoconfig/guess-from-search-domains.cpp
++++ /dev/null
+@@ -1,53 +0,0 @@
+-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+-/**
+- * Copyright (c) 2014-2015,  Regents of the University of California,
+- *                           Arizona Board of Regents,
+- *                           Colorado State University,
+- *                           University Pierre & Marie Curie, Sorbonne University,
+- *                           Washington University in St. Louis,
+- *                           Beijing Institute of Technology,
+- *                           The University of Memphis.
+- *
+- * This file is part of NFD (Named Data Networking Forwarding Daemon).
+- * See AUTHORS.md for complete list of NFD authors and contributors.
+- *
+- * NFD is free software: you can redistribute it and/or modify it under the terms
+- * of the GNU General Public License as published by the Free Software Foundation,
+- * either version 3 of the License, or (at your option) any later version.
+- *
+- * NFD is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+- * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+- * PURPOSE.  See the GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along with
+- * NFD, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
+- */
+-
+-#include "guess-from-search-domains.hpp"
+-
+-namespace ndn {
+-namespace tools {
+-namespace autoconfig {
+-
+-GuessFromSearchDomains::GuessFromSearchDomains(Face& face, KeyChain& keyChain,
+-                                               const NextStageCallback& nextStageOnFailure)
+-  : BaseDns(face, keyChain, nextStageOnFailure)
+-{
+-}
+-
+-void
+-GuessFromSearchDomains::start()
+-{
+-  try {
+-    std::string hubUri = BaseDns::querySrvRrSearch();
+-    this->connectToHub(hubUri);
+-  }
+-  catch (const BaseDns::Error& e) {
+-    m_nextStageOnFailure(std::string("Failed to find NDN router using default suffix DNS query (") +
+-                         e.what() + ")");
+-  }
+-}
+-
+-} // namespace autoconfig
+-} // namespace tools
+-} // namespace ndn
+diff --git a/tools/ndn-autoconfig/guess-from-search-domains.hpp b/tools/ndn-autoconfig/guess-from-search-domains.hpp
+deleted file mode 100644
+index e2eaa5a..0000000
+--- a/tools/ndn-autoconfig/guess-from-search-domains.hpp
++++ /dev/null
+@@ -1,67 +0,0 @@
+-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+-/**
+- * Copyright (c) 2014-2015,  Regents of the University of California,
+- *                           Arizona Board of Regents,
+- *                           Colorado State University,
+- *                           University Pierre & Marie Curie, Sorbonne University,
+- *                           Washington University in St. Louis,
+- *                           Beijing Institute of Technology,
+- *                           The University of Memphis.
+- *
+- * This file is part of NFD (Named Data Networking Forwarding Daemon).
+- * See AUTHORS.md for complete list of NFD authors and contributors.
+- *
+- * NFD is free software: you can redistribute it and/or modify it under the terms
+- * of the GNU General Public License as published by the Free Software Foundation,
+- * either version 3 of the License, or (at your option) any later version.
+- *
+- * NFD is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+- * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+- * PURPOSE.  See the GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along with
+- * NFD, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
+- */
+-
+-#ifndef NFD_TOOLS_NDN_AUTOCONFIG_GUESS_FROM_SEARCH_DOMAINS_HPP
+-#define NFD_TOOLS_NDN_AUTOCONFIG_GUESS_FROM_SEARCH_DOMAINS_HPP
+-
+-#include "base-dns.hpp"
+-
+-namespace ndn {
+-namespace tools {
+-namespace autoconfig {
+-
+-/**
+- * @brief Guessing home router based on DNS query with default suffix
+- *
+- * - Request
+- *
+- *     The end host sends a DNS query that is equivalent to this command:
+- *
+- *         dig +search +short +cmd +tries=2 +ndots=10 _ndn._udp srv
+- *
+- * - Response
+- *
+- *     The DNS server should answer with an SRV record that contains the hostname and UDP port
+- *     number of the NDN router.
+- */
+-class GuessFromSearchDomains : public BaseDns
+-{
+-public:
+-  /**
+-   * @brief Create stage to guess home router based on DNS query with default suffix
+-   * @sa Base::Base
+-   */
+-  GuessFromSearchDomains(Face& face, KeyChain& keyChain,
+-                         const NextStageCallback& nextStageOnFailure);
+-
+-  virtual void
+-  start() DECL_OVERRIDE;
+-};
+-
+-} // namespace autoconfig
+-} // namespace tools
+-} // namespace ndn
+-
+-#endif // NFD_TOOLS_NDN_AUTOCONFIG_GUESSING_FROM_SEARCH_DOMAINS_HPP
+diff --git a/tools/ndn-autoconfig/main.cpp b/tools/ndn-autoconfig/main.cpp
+deleted file mode 100644
+index 1708bdb..0000000
+--- a/tools/ndn-autoconfig/main.cpp
++++ /dev/null
+@@ -1,235 +0,0 @@
+-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+-/**
+- * Copyright (c) 2014-2015,  Regents of the University of California,
+- *                           Arizona Board of Regents,
+- *                           Colorado State University,
+- *                           University Pierre & Marie Curie, Sorbonne University,
+- *                           Washington University in St. Louis,
+- *                           Beijing Institute of Technology,
+- *                           The University of Memphis.
+- *
+- * This file is part of NFD (Named Data Networking Forwarding Daemon).
+- * See AUTHORS.md for complete list of NFD authors and contributors.
+- *
+- * NFD is free software: you can redistribute it and/or modify it under the terms
+- * of the GNU General Public License as published by the Free Software Foundation,
+- * either version 3 of the License, or (at your option) any later version.
+- *
+- * NFD is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+- * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+- * PURPOSE.  See the GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along with
+- * NFD, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
+- */
+-
+-#include "version.hpp"
+-
+-#include "multicast-discovery.hpp"
+-#include "guess-from-search-domains.hpp"
+-#include "guess-from-identity-name.hpp"
+-
+-#include <ndn-cxx/util/network-monitor.hpp>
+-#include <ndn-cxx/util/scheduler.hpp>
+-#include <ndn-cxx/util/scheduler-scoped-event-id.hpp>
+-
+-#include <boost/noncopyable.hpp>
+-#include <boost/program_options/options_description.hpp>
+-#include <boost/program_options/variables_map.hpp>
+-#include <boost/program_options/parsers.hpp>
+-
+-namespace po = boost::program_options;
+-
+-namespace ndn {
+-namespace tools {
+-
+-class NdnAutoconfig : boost::noncopyable
+-{
+-public:
+-  class Error : public std::runtime_error
+-  {
+-  public:
+-    explicit
+-    Error(const std::string& what)
+-      : std::runtime_error(what)
+-    {
+-    }
+-  };
+-
+-  explicit
+-  NdnAutoconfig(bool isDaemonMode)
+-    : m_face(m_io)
+-    , m_scheduler(m_io)
+-    , m_startStagesEvent(m_scheduler)
+-    , m_isDaemonMode(isDaemonMode)
+-    , m_terminationSignalSet(m_io)
+-    , m_stage1(m_face, m_keyChain,
+-               [&] (const std::string& errorMessage) {
+-                 std::cerr << "Stage 1 failed: " << errorMessage << std::endl;
+-                 m_stage2.start();
+-               })
+-    , m_stage2(m_face, m_keyChain,
+-               [&] (const std::string& errorMessage) {
+-                 std::cerr << "Stage 2 failed: " << errorMessage << std::endl;
+-                 m_stage3.start();
+-               })
+-    , m_stage3(m_face, m_keyChain,
+-               [&] (const std::string& errorMessage) {
+-                 std::cerr << "Stage 3 failed: " << errorMessage << std::endl;
+-                 if (!m_isDaemonMode)
+-                   BOOST_THROW_EXCEPTION(Error("No more stages, automatic discovery failed"));
+-                 else
+-                   std::cerr << "No more stages, automatic discovery failed" << std::endl;
+-               })
+-  {
+-    if (m_isDaemonMode) {
+-      m_networkMonitor.reset(new util::NetworkMonitor(m_io));
+-      m_networkMonitor->onNetworkStateChanged.connect([this] {
+-          // delay stages, so if multiple events are triggered in short sequence,
+-          // only one auto-detection procedure is triggered
+-          m_startStagesEvent = m_scheduler.scheduleEvent(time::seconds(5),
+-                                                         bind(&NdnAutoconfig::startStages, this));
+-        });
+-    }
+-
+-    // Delay a little bit
+-    m_startStagesEvent = m_scheduler.scheduleEvent(time::milliseconds(100),
+-                                                   bind(&NdnAutoconfig::startStages, this));
+-  }
+-
+-  void
+-  run()
+-  {
+-    if (m_isDaemonMode) {
+-      m_terminationSignalSet.add(SIGINT);
+-      m_terminationSignalSet.add(SIGTERM);
+-      m_terminationSignalSet.async_wait(bind(&NdnAutoconfig::terminate, this, _1, _2));
+-    }
+-
+-    m_io.run();
+-  }
+-
+-  void
+-  terminate(const boost::system::error_code& error, int signalNo)
+-  {
+-    if (error)
+-      return;
+-
+-    m_io.stop();
+-  }
+-
+-
+-  static void
+-  usage(std::ostream& os,
+-        const po::options_description& optionDescription,
+-        const char* programName)
+-  {
+-    os << "Usage:\n"
+-       << "  " << programName << " [options]\n"
+-       << "\n";
+-    os << optionDescription;
+-  }
+-
+-private:
+-  void
+-  startStages()
+-  {
+-    m_stage1.start();
+-    if (m_isDaemonMode) {
+-      m_startStagesEvent = m_scheduler.scheduleEvent(time::hours(1),
+-                                                     bind(&NdnAutoconfig::startStages, this));
+-    }
+-  }
+-
+-private:
+-  boost::asio::io_service m_io;
+-  Face m_face;
+-  KeyChain m_keyChain;
+-  unique_ptr<util::NetworkMonitor> m_networkMonitor;
+-  util::Scheduler m_scheduler;
+-  util::scheduler::ScopedEventId m_startStagesEvent;
+-  bool m_isDaemonMode;
+-  boost::asio::signal_set m_terminationSignalSet;
+-
+-  autoconfig::MulticastDiscovery m_stage1;
+-  autoconfig::GuessFromSearchDomains m_stage2;
+-  autoconfig::GuessFromIdentityName m_stage3;
+-};
+-
+-} // namespace tools
+-} // namespace ndn
+-
+-int
+-main(int argc, char** argv)
+-{
+-  bool isDaemonMode = false;
+-  std::string configFile;
+-
+-  po::options_description optionDescription("Options");
+-  optionDescription.add_options()
+-    ("help,h", "produce help message")
+-    ("daemon,d", po::bool_switch(&isDaemonMode)->default_value(isDaemonMode),
+-     "run in daemon mode, detecting network change events and re-running "
+-     "auto-discovery procedure.  In addition, the auto-discovery procedure "
+-     "is unconditionally re-run every hour.\n"
+-     "NOTE: if connection to NFD fails, the daemon will be terminated.")
+-    ("config,c", po::value<std::string>(&configFile), "configuration file. If `enabled = true` "
+-     "is not specified, no actions will be performed.")
+-    ("version,V", "show version and exit")
+-    ;
+-
+-  po::variables_map options;
+-  try {
+-    po::store(po::parse_command_line(argc, argv, optionDescription), options);
+-    po::notify(options);
+-  }
+-  catch (const std::exception& e) {
+-    std::cerr << "ERROR: " << e.what() << "\n" << std::endl;
+-    ndn::tools::NdnAutoconfig::usage(std::cerr, optionDescription, argv[0]);
+-    return 1;
+-  }
+-
+-  if (options.count("help")) {
+-    ndn::tools::NdnAutoconfig::usage(std::cout, optionDescription, argv[0]);
+-    return 0;
+-  }
+-
+-  if (options.count("version")) {
+-    std::cout << NFD_VERSION_BUILD_STRING << std::endl;
+-    return 0;
+-  }
+-
+-  // Enable (one-shot or daemon mode whenever config file is not specified)
+-  bool isEnabled = true;
+-
+-  po::options_description configFileOptions;
+-  configFileOptions.add_options()
+-    ("enabled", po::value<bool>(&isEnabled))
+-    ;
+-
+-  if (!configFile.empty()) {
+-    isEnabled = false; // Disable by default if config file is specified
+-    try {
+-      po::store(po::parse_config_file<char>(configFile.c_str(), configFileOptions), options);
+-      po::notify(options);
+-    }
+-    catch (const std::exception& e) {
+-      std::cerr << "ERROR: " << e.what() << std::endl << std::endl;
+-      return 1;
+-    }
+-  }
+-
+-  if (!isEnabled) {
+-    return 0;
+-  }
+-
+-  try {
+-    ndn::tools::NdnAutoconfig autoConfigInstance(isDaemonMode);
+-    autoConfigInstance.run();
+-  }
+-  catch (const std::exception& error) {
+-    std::cerr << "ERROR: " << error.what() << std::endl;
+-    return 1;
+-  }
+-  return 0;
+-}
+diff --git a/tools/ndn-autoconfig/multicast-discovery.cpp b/tools/ndn-autoconfig/multicast-discovery.cpp
+deleted file mode 100644
+index 2e3f8a2..0000000
+--- a/tools/ndn-autoconfig/multicast-discovery.cpp
++++ /dev/null
+@@ -1,194 +0,0 @@
+-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+-/**
+- * Copyright (c) 2014-2015,  Regents of the University of California,
+- *                           Arizona Board of Regents,
+- *                           Colorado State University,
+- *                           University Pierre & Marie Curie, Sorbonne University,
+- *                           Washington University in St. Louis,
+- *                           Beijing Institute of Technology,
+- *                           The University of Memphis.
+- *
+- * This file is part of NFD (Named Data Networking Forwarding Daemon).
+- * See AUTHORS.md for complete list of NFD authors and contributors.
+- *
+- * NFD is free software: you can redistribute it and/or modify it under the terms
+- * of the GNU General Public License as published by the Free Software Foundation,
+- * either version 3 of the License, or (at your option) any later version.
+- *
+- * NFD is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+- * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+- * PURPOSE.  See the GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along with
+- * NFD, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
+- */
+-
+-#include "multicast-discovery.hpp"
+-
+-#include <ndn-cxx/util/segment-fetcher.hpp>
+-
+-namespace ndn {
+-namespace tools {
+-namespace autoconfig {
+-
+-static const Name LOCALHOP_HUB_DISCOVERY_PREFIX = "/localhop/ndn-autoconf/hub";
+-
+-MulticastDiscovery::MulticastDiscovery(Face& face, KeyChain& keyChain,
+-                                       const NextStageCallback& nextStageOnFailure)
+-  : Base(face, keyChain, nextStageOnFailure)
+-  , nRequestedRegs(0)
+-  , nFinishedRegs(0)
+-{
+-}
+-
+-void
+-MulticastDiscovery::start()
+-{
+-  std::cerr << "Trying multicast discovery..." << std::endl;
+-
+-  util::SegmentFetcher::fetch(m_face, Interest("/localhost/nfd/faces/list"),
+-                              m_validator,
+-                              [this] (const ConstBufferPtr& data) {
+-                                registerHubDiscoveryPrefix(data);
+-                              },
+-                              [this] (uint32_t code, const std::string& msg) {
+-                                m_nextStageOnFailure(msg);
+-                              });
+-}
+-
+-void
+-MulticastDiscovery::registerHubDiscoveryPrefix(const ConstBufferPtr& buffer)
+-{
+-  std::vector<uint64_t> multicastFaces;
+-
+-  size_t offset = 0;
+-  while (offset < buffer->size()) {
+-    bool isOk = false;
+-    Block block;
+-    std::tie(isOk, block) = Block::fromBuffer(buffer, offset);
+-    if (!isOk) {
+-      std::cerr << "ERROR: cannot decode FaceStatus TLV" << std::endl;
+-      break;
+-    }
+-
+-    offset += block.size();
+-
+-    nfd::FaceStatus faceStatus(block);
+-
+-    ndn::util::FaceUri uri(faceStatus.getRemoteUri());
+-    if (uri.getScheme() == "udp4") {
+-      namespace ip = boost::asio::ip;
+-      boost::system::error_code ec;
+-      ip::address address = ip::address::from_string(uri.getHost(), ec);
+-
+-      if (!ec && address.is_multicast()) {
+-        multicastFaces.push_back(faceStatus.getFaceId());
+-      }
+-      else
+-        continue;
+-    }
+-  }
+-
+-  if (multicastFaces.empty()) {
+-    m_nextStageOnFailure("No multicast faces available, skipping multicast discovery stage");
+-  }
+-  else {
+-    nfd::ControlParameters parameters;
+-    parameters
+-      .setName(LOCALHOP_HUB_DISCOVERY_PREFIX)
+-      .setCost(1)
+-      .setExpirationPeriod(time::seconds(30));
+-
+-    nRequestedRegs = multicastFaces.size();
+-    nFinishedRegs = 0;
+-
+-    for (const auto& face : multicastFaces) {
+-      parameters.setFaceId(face);
+-      m_controller.start<nfd::RibRegisterCommand>(parameters,
+-                                                  bind(&MulticastDiscovery::onRegisterSuccess,
+-                                                       this),
+-                                                  bind(&MulticastDiscovery::onRegisterFailure,
+-                                                       this, _1, _2));
+-    }
+-  }
+-}
+-
+-void
+-MulticastDiscovery::onRegisterSuccess()
+-{
+-  ++nFinishedRegs;
+-
+-  if (nRequestedRegs == nFinishedRegs) {
+-    MulticastDiscovery::setStrategy();
+-  }
+-}
+-
+-void
+-MulticastDiscovery::onRegisterFailure(uint32_t code, const std::string& error)
+-{
+-  std::cerr << "ERROR: " << error << " (code: " << code << ")" << std::endl;
+-  --nRequestedRegs;
+-
+-  if (nRequestedRegs == nFinishedRegs) {
+-    if (nRequestedRegs > 0) {
+-      MulticastDiscovery::setStrategy();
+-    } else {
+-      m_nextStageOnFailure("Failed to register " + LOCALHOP_HUB_DISCOVERY_PREFIX.toUri() +
+-                           " for all multicast faces, skipping multicast discovery stage");
+-    }
+-  }
+-}
+-
+-void
+-MulticastDiscovery::setStrategy()
+-{
+-  nfd::ControlParameters parameters;
+-  parameters
+-    .setName(LOCALHOP_HUB_DISCOVERY_PREFIX)
+-    .setStrategy("/localhost/nfd/strategy/multicast");
+-
+-  m_controller.start<nfd::StrategyChoiceSetCommand>(parameters,
+-                                                    bind(&MulticastDiscovery::requestHubData, this),
+-                                                    bind(&MulticastDiscovery::onSetStrategyFailure,
+-                                                         this, _2));
+-}
+-
+-void
+-MulticastDiscovery::onSetStrategyFailure(const std::string& error)
+-{
+-  m_nextStageOnFailure("Failed to set multicast strategy for " +
+-                       LOCALHOP_HUB_DISCOVERY_PREFIX.toUri() + " namespace (" + error + "). "
+-                       "Skipping multicast discovery stage");
+-}
+-
+-void
+-MulticastDiscovery::requestHubData()
+-{
+-  Interest interest(LOCALHOP_HUB_DISCOVERY_PREFIX);
+-  interest.setInterestLifetime(time::milliseconds(4000)); // 4 seconds
+-  interest.setMustBeFresh(true);
+-
+-  m_face.expressInterest(interest,
+-                         bind(&MulticastDiscovery::onSuccess, this, _2),
+-                         bind(m_nextStageOnFailure, "Timeout"));
+-}
+-
+-void
+-MulticastDiscovery::onSuccess(Data& data)
+-{
+-  const Block& content = data.getContent();
+-  content.parse();
+-
+-  // Get Uri
+-  Block::element_const_iterator blockValue = content.find(tlv::nfd::Uri);
+-  if (blockValue == content.elements_end()) {
+-    m_nextStageOnFailure("Incorrect reply to multicast discovery stage");
+-    return;
+-  }
+-  std::string hubUri(reinterpret_cast<const char*>(blockValue->value()), blockValue->value_size());
+-  this->connectToHub(hubUri);
+-}
+-
+-} // namespace autoconfig
+-} // namespace tools
+-} // namespace ndn
+diff --git a/tools/ndn-autoconfig/multicast-discovery.hpp b/tools/ndn-autoconfig/multicast-discovery.hpp
+deleted file mode 100644
+index 893d233..0000000
+--- a/tools/ndn-autoconfig/multicast-discovery.hpp
++++ /dev/null
+@@ -1,98 +0,0 @@
+-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+-/**
+- * Copyright (c) 2014-2015,  Regents of the University of California,
+- *                           Arizona Board of Regents,
+- *                           Colorado State University,
+- *                           University Pierre & Marie Curie, Sorbonne University,
+- *                           Washington University in St. Louis,
+- *                           Beijing Institute of Technology,
+- *                           The University of Memphis.
+- *
+- * This file is part of NFD (Named Data Networking Forwarding Daemon).
+- * See AUTHORS.md for complete list of NFD authors and contributors.
+- *
+- * NFD is free software: you can redistribute it and/or modify it under the terms
+- * of the GNU General Public License as published by the Free Software Foundation,
+- * either version 3 of the License, or (at your option) any later version.
+- *
+- * NFD is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+- * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+- * PURPOSE.  See the GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along with
+- * NFD, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
+- */
+-
+-#ifndef NFD_TOOLS_NDN_AUTOCONFIG_MULTICAST_DISCOVERY_HPP
+-#define NFD_TOOLS_NDN_AUTOCONFIG_MULTICAST_DISCOVERY_HPP
+-
+-#include "base.hpp"
+-
+-#include <ndn-cxx/security/validator-null.hpp>
+-
+-namespace ndn {
+-namespace tools {
+-namespace autoconfig {
+-
+-/**
+- * @brief Multicast discovery stage
+- *
+- * - Request
+- *
+- *     The end host sends an Interest over a multicast face.
+- *
+- *     Interest Name is /localhop/ndn-autoconf/hub.
+- *
+- * - Response
+- *
+- *     A producer app on the HUB answer this Interest with a Data packet that contains a
+- *     TLV-encoded Uri block.  The value of this block is the URI for the HUB, preferably a
+- *     UDP tunnel.
+- */
+-class MulticastDiscovery : public Base
+-{
+-public:
+-  /**
+-   * @brief Create multicast discovery stage
+-   * @sa Base::Base
+-   */
+-  MulticastDiscovery(Face& face, KeyChain& keyChain, const NextStageCallback& nextStageOnFailure);
+-
+-  virtual void
+-  start() DECL_OVERRIDE;
+-
+-private:
+-  void
+-  registerHubDiscoveryPrefix(const ConstBufferPtr& buffer);
+-
+-  void
+-  onRegisterSuccess();
+-
+-  void
+-  onRegisterFailure(uint32_t code, const std::string& error);
+-
+-  void
+-  setStrategy();
+-
+-  void
+-  onSetStrategyFailure(const std::string& error);
+-
+-  // Start to look for a hub (NDN hub discovery first stage)
+-  void
+-  requestHubData();
+-
+-  void
+-  onSuccess(Data& data);
+-
+-private:
+-  size_t nRequestedRegs;
+-  size_t nFinishedRegs;
+-
+-  ndn::ValidatorNull m_validator;
+-};
+-
+-} // namespace autoconfig
+-} // namespace tools
+-} // namespace ndn
+-
+-#endif // NFD_TOOLS_NDN_AUTOCONFIG_MULTICAST_DISCOVERY_HPP
+diff --git a/tools/nfdc.cpp b/tools/nfdc.cpp
+index fcb808f..d5c0b97 100644
+--- a/tools/nfdc.cpp
++++ b/tools/nfdc.cpp
+@@ -115,7 +115,7 @@ Nfdc::FaceIdFetcher::start(ndn::Face& face,
+   if (!boost::regex_match(input, e)) {
+     try
+       {
+-        u_int32_t faceId = boost::lexical_cast<uint32_t>(input);
++        uint32_t faceId = boost::lexical_cast<uint32_t>(input);
+         onSucceed(faceId);
+         return;
+       }
+diff --git a/tools/wscript b/tools/wscript
+index 1f99ef6..90cc965 100644
+--- a/tools/wscript
++++ b/tools/wscript
+@@ -11,7 +11,7 @@ def build(bld):
+         bld(features=['cxx', 'cxxprogram'],
+             target="../bin/%s" % name,
+             source=[i] + bld.path.ant_glob(['%s/**/*.cpp' % name]),
+-            use='ndn-cxx core-objects LIBRESOLV BOOST'
++            use='NDN_CXX core-objects LIBRESOLV BOOST'
+             )
+ 
+     # List all directories files (tool can has multiple .cpp in the directory)
+@@ -21,7 +21,7 @@ def build(bld):
+             bld(features=['cxx', 'cxxprogram'],
+                 target="../bin/%s" % name,
+                 source=srcFiles,
+-                use='ndn-cxx core-objects LIBRESOLV BOOST',
++                use='NDN_CXX core-objects LIBRESOLV BOOST',
+                 includes='%s' % name,
+                 )
+ 
+diff --git a/wscript b/wscript
+index 4b0ca05..7679c99 100644
+--- a/wscript
++++ b/wscript
+@@ -71,11 +71,13 @@ def configure(conf):
+ 
+     if 'PKG_CONFIG_PATH' not in os.environ:
+         os.environ['PKG_CONFIG_PATH'] = Utils.subst_vars('${LIBDIR}/pkgconfig', conf.env)
+-    conf.check_cfg(package='libndn-cxx', args=['--cflags', '--libs'],
++    conf.check_cfg(package='libndn-cxx', args=['--static', '--cflags', '--libs'],
+                    uselib_store='NDN_CXX', mandatory=True)
+ 
+     conf.checkDependency(name='librt', lib='rt', mandatory=False)
+     conf.checkDependency(name='libresolv', lib='resolv', mandatory=False)
++    conf.check_cxx(lib='mswsock', uselib_store='MSWSOCK', define_name='HAVE_MSWSOCK',
++                   mandatory=False)
+ 
+     if not conf.check_cxx(msg='Checking if privilege drop/elevation is supported', mandatory=False,
+                           define_name='HAVE_PRIVILEGE_DROP_AND_ELEVATE', fragment='''
+@@ -101,7 +103,7 @@ main(int, char**)
+ 
+     conf.check_cxx(header_name='ifaddrs.h', mandatory=False)
+ 
+-    boost_libs = 'system chrono program_options random thread'
++    boost_libs = 'system filesystem date_time iostreams regex program_options chrono random thread'
+     if conf.options.with_tests:
+         conf.env['WITH_TESTS'] = 1
+         conf.define('WITH_TESTS', 1);
+@@ -172,7 +174,7 @@ def build(bld):
+         features='cxx pch',
+         source=bld.path.ant_glob(['core/**/*.cpp'],
+                                  excl=['core/logger*.cpp']),
+-        use='version BOOST NDN_CXX LIBRT',
++        use='version BOOST NDN_CXX LIBRT MSWSOCK',
+         includes='. core',
+         export_includes='. core',
+         headers='common.hpp',
+@@ -192,7 +194,7 @@ def build(bld):
+                                        'daemon/face/unix-*.cpp',
+                                        'daemon/face/websocket-*.cpp',
+                                        'daemon/main.cpp']),
+-        use='core-objects WEBSOCKET',
++        use='core-objects NDN_CXX WEBSOCKET',
+         includes='daemon',
+         export_includes='daemon',
+         )
+@@ -212,13 +214,13 @@ def build(bld):
+         name='rib-objects',
+         features='cxx',
+         source=bld.path.ant_glob(['rib/**/*.cpp']),
+-        use='core-objects',
++        use='core-objects NDN_CXX',
+         )
+ 
+     bld(target='bin/nfd',
+         features='cxx cxxprogram',
+         source='daemon/main.cpp',
+-        use='daemon-objects rib-objects',
++        use='daemon-objects rib-objects NDN_CXX BOOST',
+         )
+ 
+     bld.recurse("tools")

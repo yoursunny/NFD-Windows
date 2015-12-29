@@ -1,0 +1,577 @@
+diff --git a/src/detail/face-impl.hpp b/src/detail/face-impl.hpp
+index 98fda53..013c74d 100644
+--- a/src/detail/face-impl.hpp
++++ b/src/detail/face-impl.hpp
+@@ -34,7 +34,6 @@
+ #include "../util/signal.hpp"
+ 
+ #include "../transport/transport.hpp"
+-#include "../transport/unix-transport.hpp"
+ #include "../transport/tcp-transport.hpp"
+ 
+ #include "../management/nfd-controller.hpp"
+diff --git a/src/encoding/endian.hpp b/src/encoding/endian.hpp
+index e37fa98..9ef2ee9 100644
+--- a/src/encoding/endian.hpp
++++ b/src/encoding/endian.hpp
+@@ -24,34 +24,19 @@
+ #ifndef NDN_ENCODING_ENDIAN_HPP
+ #define NDN_ENCODING_ENDIAN_HPP
+ 
+-#ifdef __linux__
+-
+-#include <endian.h>
+-
+-#endif // __linux__
+-
+-#ifdef __FreeBSD__
+-
+-#include <sys/endian.h>
+-
+-#endif // __FreeBSD__
+-
+-#ifdef __APPLE__
+-
+-#include <libkern/OSByteOrder.h>
+-#define htobe16(x) OSSwapHostToBigInt16(x)
+-#define htole16(x) OSSwapHostToLittleInt16(x)
+-#define be16toh(x) OSSwapBigToHostInt16(x)
+-#define le16toh(x) OSSwapLittleToHostInt16(x)
+-#define htobe32(x) OSSwapHostToBigInt32(x)
+-#define htole32(x) OSSwapHostToLittleInt32(x)
+-#define be32toh(x) OSSwapBigToHostInt32(x)
+-#define le32toh(x) OSSwapLittleToHostInt32(x)
+-#define htobe64(x) OSSwapHostToBigInt64(x)
+-#define htole64(x) OSSwapHostToLittleInt64(x)
+-#define be64toh(x) OSSwapBigToHostInt64(x)
+-#define le64toh(x) OSSwapLittleToHostInt64(x)
+-
+-#endif // __APPLE__
++#include <boost/endian/conversion.hpp>
++
++#define htobe16(x) ::boost::endian::native_to_big(x)
++#define htole16(x) ::boost::endian::native_to_little(x)
++#define be16toh(x) ::boost::endian::big_to_native(x)
++#define le16toh(x) ::boost::endian::little_to_native(x)
++#define htobe32(x) ::boost::endian::native_to_big(x)
++#define htole32(x) ::boost::endian::native_to_little(x)
++#define be32toh(x) ::boost::endian::big_to_native(x)
++#define le32toh(x) ::boost::endian::little_to_native(x)
++#define htobe64(x) ::boost::endian::native_to_big(x)
++#define htole64(x) ::boost::endian::native_to_little(x)
++#define be64toh(x) ::boost::endian::big_to_native(x)
++#define le64toh(x) ::boost::endian::little_to_native(x)
+ 
+ #endif // NDN_ENCODING_ENDIAN_HPP
+diff --git a/src/face.cpp b/src/face.cpp
+index 336e85e..dde8d73 100644
+--- a/src/face.cpp
++++ b/src/face.cpp
+@@ -96,7 +96,7 @@ Face::construct(KeyChain& keyChain)
+                                 .get_optional<std::string>("transport");
+   if (!transportType) {
+     // transport not specified, use default Unix transport.
+-    construct(UnixTransport::create(config), keyChain);
++    construct(TcpTransport::create(config), keyChain);
+     return;
+   }
+ 
+@@ -110,10 +110,7 @@ Face::construct(KeyChain& keyChain)
+ 
+   const std::string protocol = uri->getScheme();
+ 
+-  if (protocol == "unix") {
+-    construct(UnixTransport::create(config), keyChain);
+-  }
+-  else if (protocol == "tcp" || protocol == "tcp4" || protocol == "tcp6") {
++  if (protocol == "tcp" || protocol == "tcp4" || protocol == "tcp6") {
+     construct(TcpTransport::create(config), keyChain);
+   }
+   else {
+diff --git a/src/management/nfd-controller.hpp b/src/management/nfd-controller.hpp
+index 331810f..dc6736d 100644
+--- a/src/management/nfd-controller.hpp
++++ b/src/management/nfd-controller.hpp
+@@ -27,6 +27,10 @@
+ #include "../security/key-chain.hpp"
+ #include "nfd-command-options.hpp"
+ 
++#ifdef ERROR_TIMEOUT
++#undef ERROR_TIMEOUT
++#endif
++
+ namespace ndn {
+ namespace nfd {
+ 
+diff --git a/src/security/conf/checker.hpp b/src/security/conf/checker.hpp
+index 49898cb..37e6839 100644
+--- a/src/security/conf/checker.hpp
++++ b/src/security/conf/checker.hpp
+@@ -511,13 +511,13 @@ private:
+           BOOST_THROW_EXCEPTION(Error("Expect the end of checker.signer"));
+ 
+         shared_ptr<IdentityCertificate> idCert
+-          = io::load<IdentityCertificate>(certfilePath.c_str());
++          = io::load<IdentityCertificate>(certfilePath.generic_string().c_str());
+ 
+         if (static_cast<bool>(idCert))
+           return idCert;
+         else
+           BOOST_THROW_EXCEPTION(Error("Cannot read certificate from file: " +
+-                                      certfilePath.native()));
++                                      certfilePath.generic_string()));
+       }
+     else if (boost::iequals(type, "base64"))
+       {
+diff --git a/src/security/pib-sqlite3.cpp b/src/security/pib-sqlite3.cpp
+index b20ee7c..a19c6d9 100644
+--- a/src/security/pib-sqlite3.cpp
++++ b/src/security/pib-sqlite3.cpp
+@@ -227,7 +227,7 @@ PibSqlite3::PibSqlite3(const string& dir)
+     boost::filesystem::create_directories(actualDir);
+   }
+   // Open PIB
+-  int result = sqlite3_open_v2((actualDir / "pib.db").c_str(), &m_database,
++  int result = sqlite3_open_v2((actualDir / "pib.db").generic_string().c_str(), &m_database,
+                                SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE,
+ #ifdef NDN_CXX_DISABLE_SQLITE3_FS_LOCKING
+                                "unix-dotfile"
+diff --git a/src/security/sec-public-info-sqlite3.cpp b/src/security/sec-public-info-sqlite3.cpp
+index 462f215..dea6739 100644
+--- a/src/security/sec-public-info-sqlite3.cpp
++++ b/src/security/sec-public-info-sqlite3.cpp
+@@ -121,7 +121,7 @@ SecPublicInfoSqlite3::SecPublicInfoSqlite3(const std::string& dir)
+   boost::filesystem::create_directories(identityDir);
+ 
+   /// @todo Add define for windows/unix in wscript. The following may completely fail on windows
+-  int res = sqlite3_open_v2((identityDir / "ndnsec-public-info.db").c_str(), &m_database,
++  int res = sqlite3_open_v2((identityDir / "ndnsec-public-info.db").generic_string().c_str(), &m_database,
+                             SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE,
+ #ifdef NDN_CXX_DISABLE_SQLITE3_FS_LOCKING
+                                                        "unix-dotfile"
+diff --git a/src/security/validator-config.cpp b/src/security/validator-config.cpp
+index 859a711..4443dfd 100644
+--- a/src/security/validator-config.cpp
++++ b/src/security/validator-config.cpp
+@@ -285,7 +285,7 @@ ValidatorConfig::onConfigTrustAnchor(const security::conf::ConfigSection& config
+         }
+       else
+         BOOST_THROW_EXCEPTION(Error("Cannot read certificate from file: " +
+-                                    certfilePath.native()));
++                                    certfilePath.generic_string()));
+ 
+       return;
+     }
+@@ -339,7 +339,7 @@ ValidatorConfig::onConfigTrustAnchor(const security::conf::ConfigSection& config
+ 
+               m_dynamicContainers.push_back(DynamicTrustAnchorContainer(dirPath, true, refresh));
+ 
+-              m_dynamicContainers.rbegin()->setLastRefresh(time::system_clock::now() - refresh);
++              m_dynamicContainers.rbegin()->setLastRefresh(boost::chrono::time_point_cast<time::system_clock::Duration>(time::system_clock::now() - refresh));
+ 
+               return;
+             }
+diff --git a/src/transport/unix-transport.cpp b/src/transport/unix-transport.cpp
+deleted file mode 100644
+index 6b86a34..0000000
+--- a/src/transport/unix-transport.cpp
++++ /dev/null
+@@ -1,134 +0,0 @@
+-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+-/**
+- * Copyright (c) 2013-2015 Regents of the University of California.
+- *
+- * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
+- *
+- * ndn-cxx library is free software: you can redistribute it and/or modify it under the
+- * terms of the GNU Lesser General Public License as published by the Free Software
+- * Foundation, either version 3 of the License, or (at your option) any later version.
+- *
+- * ndn-cxx library is distributed in the hope that it will be useful, but WITHOUT ANY
+- * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+- * PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more details.
+- *
+- * You should have received copies of the GNU General Public License and GNU Lesser
+- * General Public License along with ndn-cxx, e.g., in COPYING.md file.  If not, see
+- * <http://www.gnu.org/licenses/>.
+- *
+- * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
+- */
+-
+-#include "common.hpp"
+-
+-#include "unix-transport.hpp"
+-#include "stream-transport.hpp"
+-
+-#include "../face.hpp"
+-#include "util/face-uri.hpp"
+-
+-namespace ndn {
+-
+-UnixTransport::UnixTransport(const std::string& unixSocket)
+-  : m_unixSocket(unixSocket)
+-{
+-}
+-
+-UnixTransport::~UnixTransport()
+-{
+-}
+-
+-std::string
+-UnixTransport::getDefaultSocketName(const ConfigFile& config)
+-{
+-  const ConfigFile::Parsed& parsed = config.getParsedConfiguration();
+-
+-  try
+-    {
+-      const util::FaceUri uri(parsed.get<std::string>("transport"));
+-
+-      if (uri.getScheme() != "unix")
+-        {
+-          BOOST_THROW_EXCEPTION(Transport::Error("Cannot create UnixTransport from \"" +
+-                                                 uri.getScheme() + "\" URI"));
+-        }
+-
+-      if (!uri.getPath().empty())
+-        {
+-          return uri.getPath();
+-        }
+-    }
+-  catch (const boost::property_tree::ptree_bad_path& error)
+-    {
+-      // no transport specified
+-    }
+-  catch (const boost::property_tree::ptree_bad_data& error)
+-    {
+-      BOOST_THROW_EXCEPTION(ConfigFile::Error(error.what()));
+-    }
+-  catch (const util::FaceUri::Error& error)
+-    {
+-      BOOST_THROW_EXCEPTION(ConfigFile::Error(error.what()));
+-    }
+-
+-  // Assume the default nfd.sock location.
+-  return "/var/run/nfd.sock";
+-}
+-
+-shared_ptr<UnixTransport>
+-UnixTransport::create(const ConfigFile& config)
+-{
+-  return make_shared<UnixTransport>(getDefaultSocketName(config));
+-}
+-
+-void
+-UnixTransport::connect(boost::asio::io_service& ioService,
+-                       const ReceiveCallback& receiveCallback)
+-{
+-  if (!static_cast<bool>(m_impl)) {
+-    Transport::connect(ioService, receiveCallback);
+-
+-    m_impl = make_shared<Impl>(ref(*this), ref(ioService));
+-  }
+-
+-  m_impl->connect(boost::asio::local::stream_protocol::endpoint(m_unixSocket));
+-}
+-
+-void
+-UnixTransport::send(const Block& wire)
+-{
+-  BOOST_ASSERT(static_cast<bool>(m_impl));
+-  m_impl->send(wire);
+-}
+-
+-void
+-UnixTransport::send(const Block& header, const Block& payload)
+-{
+-  BOOST_ASSERT(static_cast<bool>(m_impl));
+-  m_impl->send(header, payload);
+-}
+-
+-void
+-UnixTransport::close()
+-{
+-  BOOST_ASSERT(static_cast<bool>(m_impl));
+-  m_impl->close();
+-  m_impl.reset();
+-}
+-
+-void
+-UnixTransport::pause()
+-{
+-  if (static_cast<bool>(m_impl)) {
+-    m_impl->pause();
+-  }
+-}
+-
+-void
+-UnixTransport::resume()
+-{
+-  BOOST_ASSERT(static_cast<bool>(m_impl));
+-  m_impl->resume();
+-}
+-
+-}
+diff --git a/src/transport/unix-transport.hpp b/src/transport/unix-transport.hpp
+deleted file mode 100644
+index 5a73047..0000000
+--- a/src/transport/unix-transport.hpp
++++ /dev/null
+@@ -1,95 +0,0 @@
+-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+-/**
+- * Copyright (c) 2013-2014 Regents of the University of California.
+- *
+- * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
+- *
+- * ndn-cxx library is free software: you can redistribute it and/or modify it under the
+- * terms of the GNU Lesser General Public License as published by the Free Software
+- * Foundation, either version 3 of the License, or (at your option) any later version.
+- *
+- * ndn-cxx library is distributed in the hope that it will be useful, but WITHOUT ANY
+- * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+- * PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more details.
+- *
+- * You should have received copies of the GNU General Public License and GNU Lesser
+- * General Public License along with ndn-cxx, e.g., in COPYING.md file.  If not, see
+- * <http://www.gnu.org/licenses/>.
+- *
+- * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
+- */
+-
+-#ifndef NDN_TRANSPORT_UNIX_TRANSPORT_HPP
+-#define NDN_TRANSPORT_UNIX_TRANSPORT_HPP
+-
+-#include "../common.hpp"
+-#include "transport.hpp"
+-#include "../util/config-file.hpp"
+-
+-// forward declaration
+-namespace boost { namespace asio { namespace local { class stream_protocol; } } }
+-
+-namespace ndn {
+-
+-// forward declaration
+-template<class T, class U>
+-class StreamTransportImpl;
+-
+-class UnixTransport : public Transport
+-{
+-public:
+-
+-  /**
+-   * Create Unix transport based on the socket specified
+-   * in a well-known configuration file or fallback to /var/run/nfd.sock
+-   *
+-   * @throws Throws UnixTransport::Error on failure to parse a discovered configuration file
+-   */
+-  UnixTransport(const std::string& unixSocket);
+-
+-  ~UnixTransport();
+-
+-  // from Transport
+-  virtual void
+-  connect(boost::asio::io_service& ioService,
+-          const ReceiveCallback& receiveCallback);
+-
+-  virtual void
+-  close();
+-
+-  virtual void
+-  pause();
+-
+-  virtual void
+-  resume();
+-
+-  virtual void
+-  send(const Block& wire);
+-
+-  virtual void
+-  send(const Block& header, const Block& payload);
+-
+-  static shared_ptr<UnixTransport>
+-  create(const ConfigFile& config);
+-
+-NDN_CXX_PUBLIC_WITH_TESTS_ELSE_PRIVATE:
+-  /**
+-   * Determine the default NFD unix socket
+-   *
+-   * @returns transport value if present in config, else /var/run/nfd.sock
+-   * @throws ConfigFile::Error if fail to parse value of a present "transport" field
+-   */
+-  static std::string
+-  getDefaultSocketName(const ConfigFile& config);
+-
+-private:
+-  std::string m_unixSocket;
+-
+-  typedef StreamTransportImpl<UnixTransport, boost::asio::local::stream_protocol> Impl;
+-  friend class StreamTransportImpl<UnixTransport, boost::asio::local::stream_protocol>;
+-  shared_ptr< Impl > m_impl;
+-};
+-
+-} // namespace ndn
+-
+-#endif // NDN_TRANSPORT_UNIX_TRANSPORT_HPP
+diff --git a/src/util/config-file.cpp b/src/util/config-file.cpp
+index aa467a2..6b31b81 100644
+--- a/src/util/config-file.cpp
++++ b/src/util/config-file.cpp
+@@ -100,7 +100,7 @@ ConfigFile::open()
+       return false;
+     }
+ 
+-  m_input.open(m_path.c_str());
++  m_input.open(m_path.generic_string().c_str());
+   if (!m_input.good() || !m_input.is_open())
+     {
+       return false;
+diff --git a/src/util/ethernet.cpp b/src/util/ethernet.cpp
+index 40d9391..fef607b 100644
+--- a/src/util/ethernet.cpp
++++ b/src/util/ethernet.cpp
+@@ -91,9 +91,9 @@ Address::fromString(const std::string& str)
+   int n = 0; // num of chars read from the input string
+ 
+   // apparently gcc-4.6 does not support the 'hh' type modifier
+-  int ret = std::sscanf(str.c_str(), "%2hx%1[:-]%2hx%1[:-]%2hx%1[:-]%2hx%1[:-]%2hx%1[:-]%2hx%n",
+-                        &temp[0], &sep[0][0], &temp[1], &sep[1][0], &temp[2], &sep[2][0],
+-                        &temp[3], &sep[3][0], &temp[4], &sep[4][0], &temp[5], &n);
++  int ret = sscanf(str.c_str(), "%2hx%1[:-]%2hx%1[:-]%2hx%1[:-]%2hx%1[:-]%2hx%1[:-]%2hx%n",
++                   &temp[0], &sep[0][0], &temp[1], &sep[1][0], &temp[2], &sep[2][0],
++                   &temp[3], &sep[3][0], &temp[4], &sep[4][0], &temp[5], &n);
+ 
+   if (ret < 11 || static_cast<size_t>(n) != str.length())
+     return Address();
+diff --git a/src/util/time-unit-test-clock.cpp b/src/util/time-unit-test-clock.cpp
+index 7ed848d..cea9344 100644
+--- a/src/util/time-unit-test-clock.cpp
++++ b/src/util/time-unit-test-clock.cpp
+@@ -21,12 +21,12 @@
+ 
+ #include "time-unit-test-clock.hpp"
+ #include "monotonic_deadline_timer.hpp"
+-#include <thread>
++#include <boost/thread.hpp>
+ 
+ namespace ndn {
+ namespace time {
+ 
+-const std::chrono::microseconds SLEEP_AFTER_TIME_CHANGE(2);
++const boost::chrono::microseconds SLEEP_AFTER_TIME_CHANGE(2);
+ 
+ template<class BaseClock>
+ UnitTestClock<BaseClock>::UnitTestClock(const nanoseconds& startTime)
+@@ -80,7 +80,7 @@ UnitTestClock<BaseClock>::advance(const nanoseconds& duration)
+   // See also http://blog.think-async.com/2007/08/time-travel.html
+   BOOST_ASSERT(boost::posix_time::microseconds(SLEEP_AFTER_TIME_CHANGE.count()) >
+                boost::asio::time_traits<steady_clock>::to_posix_duration(duration));
+-  std::this_thread::sleep_for(SLEEP_AFTER_TIME_CHANGE);
++  boost::this_thread::sleep_for(SLEEP_AFTER_TIME_CHANGE);
+ }
+ 
+ template<class BaseClock>
+@@ -91,7 +91,7 @@ UnitTestClock<BaseClock>::setNow(const nanoseconds& timeSinceEpoch)
+                boost::asio::time_traits<steady_clock>::to_posix_duration(timeSinceEpoch -
+                                                                          m_currentTime));
+   m_currentTime = timeSinceEpoch;
+-  std::this_thread::sleep_for(SLEEP_AFTER_TIME_CHANGE);
++  boost::this_thread::sleep_for(SLEEP_AFTER_TIME_CHANGE);
+ }
+ 
+ template
+diff --git a/src/util/time.hpp b/src/util/time.hpp
+index e0f64c5..0fe9ad0 100644
+--- a/src/util/time.hpp
++++ b/src/util/time.hpp
+@@ -23,6 +23,8 @@
+ #define NDN_TIME_HPP
+ 
+ #include "../common.hpp"
++#include <boost/ratio.hpp>
++using boost::ratio;
+ #include <boost/chrono.hpp>
+ #include <boost/asio/time_traits.hpp>
+ #include <boost/date_time/posix_time/posix_time_types.hpp>
+diff --git a/tools/ndnputchunks3.cpp b/tools/ndnputchunks3.cpp
+index 6eea0b7..12c133c 100644
+--- a/tools/ndnputchunks3.cpp
++++ b/tools/ndnputchunks3.cpp
+@@ -23,6 +23,7 @@
+ 
+ #include "face.hpp"
+ #include "security/key-chain.hpp"
++#include <boost/thread.hpp>
+ 
+ namespace ndn {
+ 
+@@ -138,7 +139,7 @@ main(int argc, char** argv)
+             {
+               std::cerr << "ERROR: " << e.what() << std::endl;
+               // and keep going
+-              sleep(1);
++              boost::this_thread::sleep_for(time::seconds(1));
+             }
+         }
+     }
+diff --git a/tools/wscript b/tools/wscript
+index 6bbe96f..e81cbe6 100644
+--- a/tools/wscript
++++ b/tools/wscript
+@@ -14,7 +14,7 @@ def build(bld):
+         bld(features=['cxx', 'cxxprogram'],
+             target="../bin/%s" % name,
+             source=[i] + bld.path.ant_glob(['%s/**/*.cpp' % name]),
+-            use='ndn-cxx'
++            use='ndn-cxx BOOST CRYPTOPP SQLITE3 RT PTHREAD WINSOCK'
+             )
+ 
+     # List all directories files (tool can has multiple .cpp in the directory)
+@@ -22,7 +22,7 @@ def build(bld):
+         bld(features=['cxx', 'cxxprogram'],
+             target="../bin/%s" % name,
+             source=bld.path.ant_glob(['%s/**/*.cpp' % name]),
+-            use='ndn-cxx',
++            use='ndn-cxx BOOST CRYPTOPP SQLITE3 RT PTHREAD WINSOCK',
+             includes='%s' % name,
+             )
+ 
+diff --git a/wscript b/wscript
+index b13263b..03e4271 100644
+--- a/wscript
++++ b/wscript
+@@ -74,7 +74,7 @@ def configure(conf):
+     conf.env['WITH_TOOLS'] = conf.options.with_tools
+     conf.env['WITH_EXAMPLES'] = conf.options.with_examples
+ 
+-    conf.find_program('sh', var='SH', mandatory=True)
++    conf.find_program('sh', var='SH', mandatory=False)
+ 
+     conf.check_cxx(lib='pthread', uselib_store='PTHREAD', define_name='HAVE_PTHREAD',
+                    mandatory=False)
+@@ -90,6 +90,8 @@ main(int, char**)
+   return 0;
+ }
+ ''')
++    conf.check_cxx(lib='ws2_32', uselib_store='WINSOCK', define_name='HAVE_WINSOCK',
++                   mandatory=False)
+ 
+     conf.check_cxx(msg='Checking for rtnetlink', mandatory=False,
+                    define_name='HAVE_RTNETLINK',
+@@ -101,7 +103,7 @@ main(int, char**)
+     conf.check_cryptopp(mandatory=True, use='PTHREAD')
+ 
+     USED_BOOST_LIBS = ['system', 'filesystem', 'date_time', 'iostreams',
+-                       'regex', 'program_options', 'chrono', 'random']
++                       'regex', 'program_options', 'chrono', 'random', 'thread']
+     if conf.env['WITH_TESTS']:
+         USED_BOOST_LIBS += ['unit_test_framework']
+         conf.define('HAVE_TESTS', 1)
+@@ -157,7 +159,7 @@ def build(bld):
+         source=bld.path.ant_glob('src/**/*.cpp',
+                                  excl=['src/**/*-osx.cpp', 'src/**/*-sqlite3.cpp']),
+         headers='src/common-pch.hpp',
+-        use='version BOOST CRYPTOPP SQLITE3 RT PTHREAD',
++        use='version BOOST CRYPTOPP SQLITE3 RT PTHREAD WINSOCK',
+         includes=". src",
+         export_includes="src",
+         install_path='${LIBDIR}',

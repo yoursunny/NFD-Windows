@@ -1,0 +1,13 @@
+diff --git a/GNUmakefile b/GNUmakefile
+index 6f84e28..d42675e 100644
+--- a/GNUmakefile
++++ b/GNUmakefile
+@@ -231,7 +231,7 @@ endif # Fedora 22/i686
+ # Way back when, '-march=native' caused a compiler crash with GCC on Ubuntu 9 or 10
+ #   Add -march=native if the user did not specify an architecture.
+ ifeq ($(findstring -m32 -m64,$(CXXFLAGS)),)
+-CXXFLAGS += -march=native
++#CXXFLAGS += -march=native
+ endif
+ 
+ #########################

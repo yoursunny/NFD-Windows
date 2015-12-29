@@ -1,0 +1,152 @@
+diff --git a/tools/peek/wscript b/tools/peek/wscript
+index 99b874e..cabafab 100644
+--- a/tools/peek/wscript
++++ b/tools/peek/wscript
+@@ -6,12 +6,12 @@ def build(bld):
+         features='cxx',
+         target='../../bin/ndnpeek',
+         source='ndn-peek.cpp',
+-        use='core-objects',
++        use='core-objects NDN_CXX BOOST',
+         )
+ 
+     bld.program(
+         features='cxx',
+         target='../../bin/ndnpoke',
+         source='ndn-poke.cpp',
+-        use='core-objects',
++        use='core-objects NDN_CXX BOOST',
+         )
+diff --git a/tools/ping/client/ndn-ping.cpp b/tools/ping/client/ndn-ping.cpp
+index d94cd0c..da167b4 100644
+--- a/tools/ping/client/ndn-ping.cpp
++++ b/tools/ping/client/ndn-ping.cpp
+@@ -39,11 +39,11 @@ public:
+     : m_ping(m_face, options)
+     , m_statisticsCollector(m_ping, options)
+     , m_tracer(m_ping, options)
+-    , m_signalSetInt(m_face.getIoService(), SIGINT)
+-    , m_signalSetQuit(m_face.getIoService(), SIGQUIT)
++    //, m_signalSetInt(m_face.getIoService(), SIGINT)
++    //, m_signalSetQuit(m_face.getIoService(), SIGQUIT)
+   {
+-    m_signalSetInt.async_wait(bind(&Runner::afterIntSignal, this, _1));
+-    m_signalSetQuit.async_wait(bind(&Runner::afterQuitSignal, this, _1));
++    //m_signalSetInt.async_wait(bind(&Runner::afterIntSignal, this, _1));
++    //m_signalSetQuit.async_wait(bind(&Runner::afterQuitSignal, this, _1));
+ 
+     m_ping.afterFinish.connect([this] {
+         this->cancel();
+@@ -78,31 +78,31 @@ private:
+   void
+   cancel()
+   {
+-    m_signalSetInt.cancel();
+-    m_signalSetQuit.cancel();
++    //m_signalSetInt.cancel();
++    //m_signalSetQuit.cancel();
+     m_ping.stop();
+   }
+ 
+-  void
+-  afterIntSignal(const boost::system::error_code& errorCode)
+-  {
+-    if (errorCode == boost::asio::error::operation_aborted) {
+-      return;
+-    }
+-
+-    cancel();
+-  }
+-
+-  void
+-  afterQuitSignal(const boost::system::error_code& errorCode)
+-  {
+-    if (errorCode == boost::asio::error::operation_aborted) {
+-      return;
+-    }
+-
+-    m_statisticsCollector.computeStatistics().printSummary(std::cout);
+-    m_signalSetQuit.async_wait(bind(&Runner::afterQuitSignal, this, _1));
+-  };
++  //void
++  //afterIntSignal(const boost::system::error_code& errorCode)
++  //{
++  //  if (errorCode == boost::asio::error::operation_aborted) {
++  //    return;
++  //  }
++  //
++  //  cancel();
++  //}
++
++  //void
++  //afterQuitSignal(const boost::system::error_code& errorCode)
++  //{
++  //  if (errorCode == boost::asio::error::operation_aborted) {
++  //    return;
++  //  }
++  //
++  //  m_statisticsCollector.computeStatistics().printSummary(std::cout);
++  //  m_signalSetQuit.async_wait(bind(&Runner::afterQuitSignal, this, _1));
++  //};
+ 
+ private:
+   Face m_face;
+@@ -110,8 +110,8 @@ private:
+   StatisticsCollector m_statisticsCollector;
+   Tracer m_tracer;
+ 
+-  boost::asio::signal_set m_signalSetInt;
+-  boost::asio::signal_set m_signalSetQuit;
++  //boost::asio::signal_set m_signalSetInt;
++  //boost::asio::signal_set m_signalSetQuit;
+ };
+ 
+ static time::milliseconds
+diff --git a/tools/ping/wscript b/tools/ping/wscript
+index 3e6755d..0d798e4 100644
+--- a/tools/ping/wscript
++++ b/tools/ping/wscript
+@@ -6,22 +6,22 @@ def build(bld):
+     bld(features='cxx',
+         name='ping-client-objects',
+         source=bld.path.ant_glob('client/*.cpp', excl='client/ndn-ping.cpp'),
+-        use='core-objects')
++        use='core-objects NDN_CXX BOOST')
+ 
+     bld(features='cxx cxxprogram',
+         target='../../bin/ndnping',
+         source='client/ndn-ping.cpp',
+-        use='ping-client-objects')
++        use='ping-client-objects NDN_CXX BOOST')
+ 
+     bld(features='cxx',
+         name='ping-server-objects',
+         source=bld.path.ant_glob('server/*.cpp', excl='server/ndn-ping-server.cpp'),
+-        use='core-objects')
++        use='core-objects NDN_CXX BOOST')
+ 
+     bld(features='cxx cxxprogram',
+         target='../../bin/ndnpingserver',
+         source='server/ndn-ping-server.cpp',
+-        use='ping-server-objects')
++        use='ping-server-objects NDN_CXX BOOST')
+ 
+     ## (for unit tests)
+ 
+diff --git a/wscript b/wscript
+index 6055bfd..e465027 100644
+--- a/wscript
++++ b/wscript
+@@ -21,10 +21,10 @@ def configure(conf):
+             '/usr/lib/pkgconfig',
+             '/usr/local/lib/pkgconfig',
+             '/opt/local/lib/pkgconfig'])
+-    conf.check_cfg(package='libndn-cxx', args=['--cflags', '--libs'],
++    conf.check_cfg(package='libndn-cxx', args=['--static', '--cflags', '--libs'],
+                    uselib_store='NDN_CXX', mandatory=True)
+ 
+-    boost_libs = 'system iostreams regex'
++    boost_libs = 'system filesystem date_time iostreams regex program_options chrono random thread'
+     if conf.options.with_tests:
+         conf.env['WITH_TESTS'] = 1
+         conf.define('WITH_TESTS', 1);
