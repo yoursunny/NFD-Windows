@@ -5,12 +5,13 @@ set -e
 REPO="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WORKDIR=$(pwd)/build
 STAGING=$(pwd)/staging
-
-TOOLCHAIN=$(pwd)/mxe
+TOOLCHAIN=/usr/lib/mxe
 export PATH=$PATH:$TOOLCHAIN/usr/bin
 
+rm -rf $STAGING
 mkdir -p $WORKDIR
 cd $WORKDIR
+rm -rf cryptopp ndn-cxx NFD infoedit ndn-tools
 
 
 mkdir cryptopp

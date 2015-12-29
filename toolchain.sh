@@ -1,21 +1,25 @@
 #!/bin/bash
-for I in $(seq 9999); do sleep 60; echo KEEP ALIVE; done &
-KEEPALIVE_PID=$!
-
 set -x
 set -e
 
-REPO="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-TOOLCHAIN=$(pwd)/mxe
+echo "deb http://pkg.mxe.cc/repos/apt/debian wheezy main" | sudo tee /etc/apt/sources.list.d/mxeapt.list
+sudo apt-key adv --keyserver x-hkp://keys.gnupg.net --recv-keys D43A795B73B16ABE9643FE1AFD8FFF16DB45C6AB
+sudo apt-get -qq -y update
+sudo apt-get -qq -y install mxe-i686-w64-mingw32.static-gcc mxe-i686-w64-mingw32.static-boost mxe-i686-w64-mingw32.static-sqlite
 
-mkdir -p $TOOLCHAIN
-cd $TOOLCHAIN
+WORKDIR=$(pwd)/build
+TOOLCHAIN=/usr/lib/mxe
 
-git init
-git fetch https://github.com/mxe/mxe.git
-git checkout 56bee8297bd90203b7e3386d5bd2b227c777fd38
+mkdir -p $WORKDIR
+cd $WORKDIR
+rm -rf boost-endian
 
-make gcc
-make CXXFLAGS="-march=i686" boost sqlite
-
-kill $KEEPALIVE_PID
+if [[ ! -d $TOOLCHAIN/usr/i686-w64-mingw32.static/include/boost/endian ]]; then
+  mkdir boost-endian
+  cd boost-endian
+  git init
+  git fetch https://github.com/boostorg/endian.git
+  git checkout 1b0a41e6cba74f55954b8cb481cb346e5cce39c1
+  sudo cp -r include/boost/endian/ $TOOLCHAIN/usr/i686-w64-mingw32.static/include/boost/
+  cd ..
+fi
