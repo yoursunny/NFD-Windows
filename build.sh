@@ -92,7 +92,7 @@ git checkout 3e79c9cda4782ef81dcab9d596df53922b254fda
 
 patch -p1 < $REPO/ndn-tools.patch
 
-CXX="i686-w64-mingw32.static-g++" CXX_NAME="gcc" CXXFLAGS="-g -march=i686" PKG_CONFIG_PATH=$STAGING/lib/pkgconfig ./waf configure --prefix=$STAGING --enable-ping --enable-peek --boost-includes=$TOOLCHAIN/usr/i686-w64-mingw32.static/include --boost-libs=$TOOLCHAIN/usr/i686-w64-mingw32.static/lib --boost-static
+CXX="i686-w64-mingw32.static-g++" CXX_NAME="gcc" CXXFLAGS="-g -march=i686" PKG_CONFIG_PATH=$STAGING/lib/pkgconfig ./waf configure --prefix=$STAGING --enable-ping --enable-peek --enable-dissect --boost-includes=$TOOLCHAIN/usr/i686-w64-mingw32.static/include --boost-libs=$TOOLCHAIN/usr/i686-w64-mingw32.static/lib --boost-static
 ./waf
 ./waf install
 

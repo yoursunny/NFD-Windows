@@ -1,3 +1,21 @@
+diff --git a/tools/dissect/wscript b/tools/dissect/wscript
+index 070ece2..8b153a9 100644
+--- a/tools/dissect/wscript
++++ b/tools/dissect/wscript
+@@ -7,11 +7,11 @@ def build(bld):
+         source=bld.path.ant_glob('*.cpp', excl='main.cpp'),
+         includes='.',
+         export_includes='.',
+-        use='core-objects',
++        use='core-objects NDN_CXX BOOST',
+         )
+ 
+     bld(features='cxx cxxprogram',
+         target='../../bin/ndn-dissect',
+         source='main.cpp',
+-        use='dissect-objects',
++        use='dissect-objects NDN_CXX BOOST',
+         )
 diff --git a/tools/peek/wscript b/tools/peek/wscript
 index 99b874e..cabafab 100644
 --- a/tools/peek/wscript
