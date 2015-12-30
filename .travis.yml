@@ -12,3 +12,9 @@ before_script:
   - ./toolchain.sh
 script:
   - ./build.sh
+deploy:
+  skip_cleanup: true
+  provider: script
+  script: ./deploy_sftp.sh
+  on:
+    branch: master
