@@ -17,7 +17,7 @@ cd $WORKDIR
 rm -rf cryptopp || true
 git clone --recursive https://github.com/weidai11/cryptopp.git
 cd cryptopp
-git checkout aff51055698873166c93d83ce09578d2ec613e64
+git checkout 51d674c7d8aa7b83ecf648d38f38a9f6acb47d37
 
 patch -p1 < $REPO/cryptopp.patch
 
