@@ -10,10 +10,10 @@ fi
 set -x
 set -e
 
-PACKAGE=/tmp/$(date -u +%Y%m%d%H%M%S).txz
+PACKAGE=/tmp/$(date -u +%Y%m%d%H%M%S).zip
 
 cd staging
-tar cJvf $PACKAGE *
+zip -r $PACKAGE *
 cd ..
 
 scp -i $HOME/deploy_sftp_id_rsa -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
