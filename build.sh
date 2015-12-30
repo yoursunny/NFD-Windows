@@ -11,14 +11,12 @@ export PATH=$PATH:$TOOLCHAIN/usr/bin
 rm -rf $STAGING
 mkdir -p $WORKDIR
 cd $WORKDIR
-rm -rf cryptopp ndn-cxx NFD infoedit ndn-tools
 
 
-mkdir cryptopp
+cd $WORKDIR
+rm -rf cryptopp || true
+git clone --recursive https://github.com/weidai11/cryptopp.git
 cd cryptopp
-
-git init
-git fetch https://github.com/weidai11/cryptopp.git
 git checkout aff51055698873166c93d83ce09578d2ec613e64
 
 patch -p1 < $REPO/cryptopp.patch
@@ -26,14 +24,11 @@ patch -p1 < $REPO/cryptopp.patch
 PREFIX="$STAGING" AS="i686-w64-mingw32.static-as" AR="i686-w64-mingw32.static-ar" RANLIB="i686-w64-mingw32.static-ranlib" STRIP="i686-w64-mingw32.static-strip" CXX="i686-w64-mingw32.static-g++" CXXFLAGS="-march=i686" make static
 PREFIX="$STAGING" make install
 
-cd ..
 
-
-mkdir ndn-cxx
+cd $WORKDIR
+rm -rf ndn-cxx || true
+git clone --recursive https://github.com/named-data/ndn-cxx.git
 cd ndn-cxx
-
-git init
-git fetch https://github.com/named-data/ndn-cxx.git
 git checkout bbca1b9ec1cc0a042560db6ab5f66a975647b46e
 
 patch -p1 < $REPO/ndn-cxx.patch
@@ -42,17 +37,15 @@ CXX="i686-w64-mingw32.static-g++" CXX_NAME="gcc" CXXFLAGS="-g -march=i686" ./waf
 ./waf
 ./waf install
 
-rm -r $STAGING/bin/ndnsec-* $STAGING/bin/tlvdump.exe || true
-cd ..
+cd $STAGING/bin
+rm -r ndnsec-* tlvdump.exe || true
 
 
-mkdir NFD
+cd $WORKDIR
+rm -rf NFD || true
+git clone --recursive https://github.com/named-data/NFD.git
 cd NFD
-
-git init
-git fetch https://github.com/named-data/NFD.git
 git checkout 5c47597be9cbcbff920a5f780cbf94bb649e8d4f
-git submodule update --init
 
 patch -p1 < $REPO/NFD.patch
 
@@ -60,15 +53,14 @@ CXX="i686-w64-mingw32.static-g++" CXX_NAME="gcc" CXXFLAGS="-g -march=i686" PKG_C
 ./waf
 ./waf install
 
-rm -r $STAGING/bin/nrd $STAGING/bin/ndncatchunks3.exe $STAGING/bin/ndnputchunks3.exe $STAGING/bin/ndn-tlv-*.exe $STAGING/bin/nfd-start $STAGING/bin/nfd-stop || true
-cd ..
+cd $STAGING/bin
+rm -r nrd ndncatchunks3.exe ndnputchunks3.exe ndn-tlv-*.exe nfd-start nfd-stop || true
 
 
-mkdir infoedit
+cd $WORKDIR
+rm -rf infoedit || true
+git clone --recursive https://github.com/NDN-Routing/infoedit.git
 cd infoedit
-
-git init
-git fetch https://github.com/NDN-Routing/infoedit.git
 git checkout 87320990cb7c1a0ef6d520b9e1e2bc6d815abada
 
 make
@@ -76,18 +68,15 @@ make
 i686-w64-mingw32.static-g++ -march=i686 -o infoedit.exe -std=c++11 infoedit.cpp -L$TOOLCHAIN/usr/i686-w64-mingw32.static/lib -lboost_program_options-mt
 cp infoedit.exe $STAGING/bin
 
-cd ..
+cd $STAGING/etc/ndn
+cp nfd.conf.sample nfd.conf
+$WORKDIR/infoedit/infoedit -f nfd.conf -d face_system.unix
 
 
-cp $STAGING/etc/ndn/nfd.conf.sample $STAGING/etc/ndn/nfd.conf
-infoedit/infoedit -f $STAGING/etc/ndn/nfd.conf -d face_system.unix
-
-
-mkdir ndn-tools
+cd $WORKDIR
+rm -rf ndn-tools || true
+git clone --recursive https://github.com/named-data/ndn-tools.git
 cd ndn-tools
-
-git init
-git fetch https://github.com/named-data/ndn-tools.git
 git checkout 3e79c9cda4782ef81dcab9d596df53922b254fda
 
 patch -p1 < $REPO/ndn-tools.patch
@@ -95,5 +84,3 @@ patch -p1 < $REPO/ndn-tools.patch
 CXX="i686-w64-mingw32.static-g++" CXX_NAME="gcc" CXXFLAGS="-g -march=i686" PKG_CONFIG_PATH=$STAGING/lib/pkgconfig ./waf configure --prefix=$STAGING --enable-ping --enable-peek --enable-dissect --boost-includes=$TOOLCHAIN/usr/i686-w64-mingw32.static/include --boost-libs=$TOOLCHAIN/usr/i686-w64-mingw32.static/lib --boost-static
 ./waf
 ./waf install
-
-cd ..
