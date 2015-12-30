@@ -42,6 +42,7 @@ CXX="i686-w64-mingw32.static-g++" CXX_NAME="gcc" CXXFLAGS="-g -march=i686" ./waf
 ./waf
 ./waf install
 
+rm -r $STAGING/bin/ndnsec-* $STAGING/bin/tlvdump.exe || true
 cd ..
 
 
@@ -59,6 +60,7 @@ CXX="i686-w64-mingw32.static-g++" CXX_NAME="gcc" CXXFLAGS="-g -march=i686" PKG_C
 ./waf
 ./waf install
 
+rm -r $STAGING/bin/nrd $STAGING/bin/ndncatchunks3.exe $STAGING/bin/ndnputchunks3.exe $STAGING/bin/ndn-tlv-*.exe $STAGING/bin/nfd-start $STAGING/bin/nfd-stop || true
 cd ..
 
 
