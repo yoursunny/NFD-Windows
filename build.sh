@@ -29,7 +29,7 @@ cd $WORKDIR
 rm -rf ndn-cxx || true
 git clone --recursive https://github.com/named-data/ndn-cxx.git
 cd ndn-cxx
-git checkout bbca1b9ec1cc0a042560db6ab5f66a975647b46e
+git checkout ed2aebafae2071abe9b1ba4fa11a3de0d6bcd59b
 
 patch -p1 < $REPO/ndn-cxx.patch
 
@@ -45,7 +45,7 @@ cd $WORKDIR
 rm -rf NFD || true
 git clone --recursive https://github.com/named-data/NFD.git
 cd NFD
-git checkout 5c47597be9cbcbff920a5f780cbf94bb649e8d4f
+git checkout da3ba964301a43f15e6b87c3d585713068252ae6
 
 patch -p1 < $REPO/NFD.patch
 

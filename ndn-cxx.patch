@@ -1,5 +1,5 @@
 diff --git a/src/detail/face-impl.hpp b/src/detail/face-impl.hpp
-index 98fda53..013c74d 100644
+index ef49992..e062107 100644
 --- a/src/detail/face-impl.hpp
 +++ b/src/detail/face-impl.hpp
 @@ -34,7 +34,6 @@
@@ -64,32 +64,32 @@ index e37fa98..9ef2ee9 100644
  
  #endif // NDN_ENCODING_ENDIAN_HPP
 diff --git a/src/face.cpp b/src/face.cpp
-index 336e85e..dde8d73 100644
+index 9f64aa6..39cdd7c 100644
 --- a/src/face.cpp
 +++ b/src/face.cpp
-@@ -96,7 +96,7 @@ Face::construct(KeyChain& keyChain)
-                                 .get_optional<std::string>("transport");
-   if (!transportType) {
+@@ -96,7 +96,7 @@ Face::makeDefaultTransport()
+                                .get_optional<std::string>("transport");
+   if (!transportUri) {
      // transport not specified, use default Unix transport.
--    construct(UnixTransport::create(config), keyChain);
-+    construct(TcpTransport::create(config), keyChain);
-     return;
+-    return UnixTransport::create(config);
++    return TcpTransport::create(config);
    }
  
-@@ -110,10 +110,7 @@ Face::construct(KeyChain& keyChain)
- 
-   const std::string protocol = uri->getScheme();
+   std::string protocol;
+@@ -108,10 +108,7 @@ Face::makeDefaultTransport()
+     BOOST_THROW_EXCEPTION(ConfigFile::Error(error.what()));
+   }
  
 -  if (protocol == "unix") {
--    construct(UnixTransport::create(config), keyChain);
+-    return UnixTransport::create(config);
 -  }
 -  else if (protocol == "tcp" || protocol == "tcp4" || protocol == "tcp6") {
 +  if (protocol == "tcp" || protocol == "tcp4" || protocol == "tcp6") {
-     construct(TcpTransport::create(config), keyChain);
+     return TcpTransport::create(config);
    }
    else {
 diff --git a/src/management/nfd-controller.hpp b/src/management/nfd-controller.hpp
-index 331810f..dc6736d 100644
+index 4fbfa3e..405b660 100644
 --- a/src/management/nfd-controller.hpp
 +++ b/src/management/nfd-controller.hpp
 @@ -27,6 +27,10 @@
@@ -536,7 +536,7 @@ index 6bbe96f..e81cbe6 100644
              )
  
 diff --git a/wscript b/wscript
-index b13263b..03e4271 100644
+index ab8b921..414e954 100644
 --- a/wscript
 +++ b/wscript
 @@ -74,7 +74,7 @@ def configure(conf):
