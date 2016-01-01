@@ -13,6 +13,7 @@ set -e
 PACKAGE=/tmp/$(date -u +%Y%m%d%H%M%S).zip
 
 cd staging
+echo $(cd ..; git log | head -1) > NFD-Windows_version.txt
 zip -r $PACKAGE *
 cd ..
 
