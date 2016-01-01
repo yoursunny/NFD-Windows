@@ -36,33 +36,28 @@ index 99b874e..cabafab 100644
 +        use='core-objects NDN_CXX BOOST',
          )
 diff --git a/tools/ping/client/ndn-ping.cpp b/tools/ping/client/ndn-ping.cpp
-index d94cd0c..da167b4 100644
+index d94cd0c..f6a83f7 100644
 --- a/tools/ping/client/ndn-ping.cpp
 +++ b/tools/ping/client/ndn-ping.cpp
-@@ -39,11 +39,11 @@ public:
+@@ -39,12 +39,7 @@ public:
      : m_ping(m_face, options)
      , m_statisticsCollector(m_ping, options)
      , m_tracer(m_ping, options)
 -    , m_signalSetInt(m_face.getIoService(), SIGINT)
 -    , m_signalSetQuit(m_face.getIoService(), SIGQUIT)
-+    //, m_signalSetInt(m_face.getIoService(), SIGINT)
-+    //, m_signalSetQuit(m_face.getIoService(), SIGQUIT)
    {
 -    m_signalSetInt.async_wait(bind(&Runner::afterIntSignal, this, _1));
 -    m_signalSetQuit.async_wait(bind(&Runner::afterQuitSignal, this, _1));
-+    //m_signalSetInt.async_wait(bind(&Runner::afterIntSignal, this, _1));
-+    //m_signalSetQuit.async_wait(bind(&Runner::afterQuitSignal, this, _1));
- 
+-
      m_ping.afterFinish.connect([this] {
          this->cancel();
-@@ -78,31 +78,31 @@ private:
+       });
+@@ -78,40 +73,14 @@ private:
    void
    cancel()
    {
 -    m_signalSetInt.cancel();
 -    m_signalSetQuit.cancel();
-+    //m_signalSetInt.cancel();
-+    //m_signalSetQuit.cancel();
      m_ping.stop();
    }
  
@@ -86,37 +81,15 @@ index d94cd0c..da167b4 100644
 -    m_statisticsCollector.computeStatistics().printSummary(std::cout);
 -    m_signalSetQuit.async_wait(bind(&Runner::afterQuitSignal, this, _1));
 -  };
-+  //void
-+  //afterIntSignal(const boost::system::error_code& errorCode)
-+  //{
-+  //  if (errorCode == boost::asio::error::operation_aborted) {
-+  //    return;
-+  //  }
-+  //
-+  //  cancel();
-+  //}
-+
-+  //void
-+  //afterQuitSignal(const boost::system::error_code& errorCode)
-+  //{
-+  //  if (errorCode == boost::asio::error::operation_aborted) {
-+  //    return;
-+  //  }
-+  //
-+  //  m_statisticsCollector.computeStatistics().printSummary(std::cout);
-+  //  m_signalSetQuit.async_wait(bind(&Runner::afterQuitSignal, this, _1));
-+  //};
- 
+-
  private:
    Face m_face;
-@@ -110,8 +110,8 @@ private:
+   Ping m_ping;
    StatisticsCollector m_statisticsCollector;
    Tracer m_tracer;
- 
+-
 -  boost::asio::signal_set m_signalSetInt;
 -  boost::asio::signal_set m_signalSetQuit;
-+  //boost::asio::signal_set m_signalSetInt;
-+  //boost::asio::signal_set m_signalSetQuit;
  };
  
  static time::milliseconds
